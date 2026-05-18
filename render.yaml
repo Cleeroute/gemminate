@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: gemminate
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: VECTOR_STORES_DIR
+        value: static/vector_stores
+    autoDeploy: true
