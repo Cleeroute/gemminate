@@ -17,10 +17,14 @@ from langchain_community.document_loaders import PyPDFLoader
 # Suppress pypdf warnings about page labels
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 
-# Global embeddings model to avoid reloading weights on every request
-embeddings_model = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Global embeddings model using OpenRouter
+embeddings_model = OpenAIEmbeddings(
+    model="sentence-transformers/all-minilm-l6-v2",
+    openai_api_base="https://openrouter.ai/api/v1",
+    openai_api_key=os.getenv("OPENROUTER_API_KEY", "dummy")
+)
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
