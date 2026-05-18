@@ -101,7 +101,6 @@ prompt_toolkit==3.0.52
 propcache==0.5.2
 protobuf==7.34.1
 psycopg2-binary==2.9.12
-py_rust_stemmers==0.1.5
 pyasn1==0.6.3
 pycparser==3.0
 pydantic==2.13.4
