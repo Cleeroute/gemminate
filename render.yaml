@@ -11,6 +11,8 @@ services:
         generateValue: true
       - key: OPENROUTER_API_KEY
         sync: false
+      - key: YOUTUBE_DATA_API_KEY
+        sync: false
       - key: VECTOR_STORES_DIR
         value: static/vector_stores
     autoDeploy: true
