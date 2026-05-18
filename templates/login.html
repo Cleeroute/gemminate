@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemminate Academy - Secure Access</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f9fafb; }
+        .cursor-card { background-color: #ffffff; border-color: #e5e7eb; }
+        .cursor-input { background-color: #f9fafb; border-color: #e5e7eb; color: #111827; }
+        .cursor-input:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1); }
+        .logo-bg { background-color: #FFEAD6; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+    <div class="w-full max-w-md">
+        <div class="flex flex-col items-center mb-8 text-center">
+            <div class="w-24 h-24 logo-bg rounded-3xl flex items-center justify-center shadow-lg mb-4 p-4">
+                <svg viewBox="0 0 200 200" class="w-full h-full">
+                    <defs>
+                        <linearGradient id="techSproutGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#0033FF"/>
+                            <stop offset="100%" stop-color="#00D4FF"/>
+                        </linearGradient>
+                    </defs>
+                    <g stroke="url(#techSproutGrad)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round" fill="none">
+                        <line x1="100" y1="150" x2="100" y2="35" />
+                        <path d="M 100 115 C 65 115, 45 85, 45 45" />
+                        <path d="M 100 115 C 135 115, 155 85, 155 45" />
+                        <path d="M 30 160 Q 60 160, 82 178" />
+                        <path d="M 170 160 Q 140 160, 118 178" />
+                    </g>
+                </svg>
+            </div>
+            <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Gemminate</h1>
+            <p class="text-blue-600 font-bold uppercase tracking-[0.2em] text-xs mt-1">Academy</p>
+        </div>
+
+        <div class="cursor-card border rounded-2xl p-8 shadow-xl">
+            <div id="error-msg" class="hidden mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-xl text-red-400 text-sm flex items-center gap-3">
+                <i data-lucide="alert-circle" class="w-5 h-5"></i>
+                <span id="error-text"></span>
+            </div>
+
+            <form id="login-form" class="space-y-6">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Email Address</label>
+                    <input type="email" id="email" placeholder="name@company.com" class="cursor-input w-full border rounded-xl px-4 py-3 text-sm transition-all" required>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Password</label>
+                    <input type="password" id="password" placeholder="••••••••" class="cursor-input w-full border rounded-xl px-4 py-3 text-sm transition-all" required>
+                </div>
+                
+                <div class="flex flex-col gap-3 pt-2">
+                    <button type="submit" onclick="submitForm(event, '/api/login')" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+                        Sign In
+                    </button>
+                    <button type="button" onclick="submitForm(event, '/api/signup')" class="w-full bg-transparent hover:bg-gray-50 text-gray-900 font-semibold py-3 rounded-xl border border-gray-200 transition-all">
+                        Create Account
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <p class="text-center text-gray-500 text-xs mt-8">
+            By continuing, you agree to Gemminate Academy's Terms of Service and Privacy Policy.
+        </p>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        async function submitForm(e, url) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('error-msg');
+            const errorText = document.getElementById('error-text');
+            
+            if (!email || !password) return;
+
+            try {
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                if (res.ok) {
+                    window.location.href = '/dashboard';
+                } else {
+                    const data = await res.json();
+                    errorText.textContent = data.detail || 'Authentication failed';
+                    errorMsg.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorText.textContent = 'Network connection error';
+                errorMsg.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

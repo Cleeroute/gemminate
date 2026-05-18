@@ -1,0 +1,3751 @@
+
+        lucide.createIcons();
+
+        function escapeHtml(str) {
+            return str
+                .replace(/&/g, '&')
+                .replace(/</g, '<')
+                .replace(/>/g, '>')
+                .replace(/"/g, '"')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderReferences(text) {
+            let refCounter = 1;
+            let refMap = {};
+
+            // 1. Handle the new format: <ref quote="exact text">SnippetNumber</ref>
+            let processedText = text.replace(/<ref\s+quote=(['"])([\s\S]*?)\1>([\s\S]*?)<\/ref>/g, (match, quoteChar, quote, num) => {
+                const cleanQuote = quote.replace(/\s+/g, ' ').trim();
+                const encodedQuote = escapeHtml(cleanQuote);
+                const originalNum = num.trim().replace(/[^\d]/g, '') || num;
+                
+                if (!refMap[originalNum]) {
+                    refMap[originalNum] = refCounter++;
+                }
+                const displayNum = refMap[originalNum];
+                
+                return `<button type="button" class="reference-btn" data-quote="${encodedQuote}" onmouseenter="showTooltip(event, this.dataset.quote)" onmouseleave="hideTooltip(event)" onclick="highlightInPdf(this.dataset.quote)">[${displayNum}]</button>`;
+            });
+
+            // 2. Fallback for the old format or variations: <ref>quote</ref>
+            processedText = processedText.replace(/<ref>([\s\S]*?)<\/ref>/g, (match, quote) => {
+                const cleanQuote = quote.replace(/\s+/g, ' ').trim();
+                const encodedQuote = escapeHtml(cleanQuote);
+                const displayNum = refCounter++;
+                
+                return `<button type="button" class="reference-btn" data-quote="${encodedQuote}" onmouseenter="showTooltip(event, this.dataset.quote)" onmouseleave="hideTooltip(event)" onclick="highlightInPdf(this.dataset.quote)">[${displayNum}]</button>`;
+            });
+
+            // 3. Hide any trailing unclosed <ref tags to prevent the user from seeing them during streaming
+            processedText = processedText.replace(/<ref(?![\s\S]*<\/ref>)[\s\S]*$/i, '');
+
+            return processedText;
+        }
+
+        function renderQuizD3(containerId, quizData, currentQuestionIndex) {
+            const container = d3.select("#" + containerId);
+            container.selectAll("*").remove();
+
+            if (!quizData || !quizData.questions || quizData.questions.length === 0) return;
+
+            const q = quizData.questions[currentQuestionIndex];
+            const total = quizData.questions.length;
+            const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+            const quizBox = container.append("div").attr("class", "quiz-container");
+
+            // Header
+            const header = quizBox.append("div").attr("class", "quiz-header");
+            const titleRow = header.append("div").style("display", "flex").style("align-items", "baseline");
+            titleRow.append("span").attr("class", "quiz-progress-text").text(`${currentQuestionIndex + 1}/${total}`);
+            titleRow.append("p").attr("class", "quiz-question-text").html(processMathAndMarkdown(q.question));
+            
+            header.append("button").attr("class", "quiz-next-btn").text("Next");
+
+            // Options
+            const optionsGroup = quizBox.append("div").attr("class", "quiz-options");
+            
+            q.options.forEach((opt, idx) => {
+                const optDiv = optionsGroup.append("div").attr("class", "quiz-option").on("click", function() {
+                    optionsGroup.selectAll(".quiz-option")
+                        .classed("selected-wrong", false)
+                        .classed("selected-correct", false)
+                        .selectAll(".quiz-icon").remove();
+
+                    if (idx === q.correctIndex) {
+                        d3.select(this).classed("selected-correct", true)
+                            .append("div").attr("class", "quiz-icon").style("margin-left", "auto")
+                            .html('<i data-lucide="check" style="width: 18px; height: 18px;"></i>');
+                    } else {
+                        d3.select(this).classed("selected-wrong", true)
+                            .append("div").attr("class", "quiz-icon").style("margin-left", "auto")
+                            .html('<i data-lucide="x" style="width: 18px; height: 18px;"></i>');
+                        
+                        // Also highlight correct
+                        optionsGroup.selectAll(".quiz-option").filter((d, i) => i === q.correctIndex)
+                            .classed("selected-correct", true)
+                            .append("div").attr("class", "quiz-icon").style("margin-left", "auto")
+                            .html('<i data-lucide="check" style="width: 18px; height: 18px;"></i>');
+                    }
+                    lucide.createIcons();
+                });
+                
+                optDiv.append("div").attr("class", "quiz-option-letter").text(letters[idx] || (idx+1));
+                optDiv.append("div").attr("class", "quiz-option-text").html(processMathAndMarkdown(opt));
+            });
+
+            // Footer
+            const footer = quizBox.append("div").attr("class", "quiz-footer");
+            footer.append("button").attr("class", "quiz-explain-btn").text("Explain");
+
+            const navArrows = footer.append("div").attr("class", "quiz-nav-arrows");
+            navArrows.append("button").attr("class", "quiz-nav-btn prev")
+                .html('<i data-lucide="arrow-left" style="width: 18px; height: 18px;"></i>')
+                .on("click", () => {
+                    if (currentQuestionIndex > 0) renderQuizD3(containerId, quizData, currentQuestionIndex - 1);
+                });
+            navArrows.append("button").attr("class", "quiz-nav-btn next")
+                .html('<i data-lucide="arrow-right" style="width: 18px; height: 18px;"></i>')
+                .on("click", () => {
+                    if (currentQuestionIndex < total - 1) renderQuizD3(containerId, quizData, currentQuestionIndex + 1);
+                });
+
+            footer.append("button").attr("class", "quiz-icon-btn")
+                .html('<i data-lucide="layers" style="width: 18px; height: 18px;"></i>');
+
+            lucide.createIcons();
+            if (window.MathJax) {
+                MathJax.typesetPromise([container.node()]).catch((err) => console.log(err.message));
+            }
+        }
+
+        function renderFlashcardsD3(containerId, flashcardData, currentIndex) {
+            const container = d3.select("#" + containerId);
+            container.selectAll("*").remove();
+
+            if (!flashcardData || !flashcardData.items || flashcardData.items.length === 0) return;
+
+            const item = flashcardData.items[currentIndex];
+            const total = flashcardData.items.length;
+
+            const cardBox = container.append("div").attr("class", "quiz-container flex flex-col items-center justify-center min-h-[300px] text-center cursor-pointer")
+                .on("click", function() {
+                    const isFront = d3.select(this).select(".card-front").classed("hidden");
+                    d3.select(this).select(".card-front").classed("hidden", !isFront);
+                    d3.select(this).select(".card-back").classed("hidden", isFront);
+                });
+
+            cardBox.append("div").attr("class", "text-xs font-bold text-gray-400 mb-4").text(`Card ${currentIndex + 1} of ${total}`);
+            
+            const front = cardBox.append("div").attr("class", "card-front w-full");
+            front.append("h2").attr("class", "text-xl font-bold px-4").html(processMathAndMarkdown(item.front));
+            front.append("p").attr("class", "text-sm text-blue-500 mt-8").text("Click to flip");
+
+            const back = cardBox.append("div").attr("class", "card-back w-full hidden");
+            back.append("div").attr("class", "text-gray-700 px-4 prose prose-sm max-w-none")
+                .html(processMathAndMarkdown(item.back));
+
+            // Nav
+            const nav = container.append("div").attr("class", "flex justify-center gap-4 mt-6");
+            nav.append("button").attr("class", "quiz-nav-btn prev")
+                .html('<i data-lucide="arrow-left"></i>')
+                .on("click", (e) => {
+                    e.stopPropagation();
+                    if (currentIndex > 0) renderFlashcardsD3(containerId, flashcardData, currentIndex - 1);
+                });
+            nav.append("button").attr("class", "quiz-nav-btn next")
+                .html('<i data-lucide="arrow-right"></i>')
+                .on("click", (e) => {
+                    e.stopPropagation();
+                    if (currentIndex < total - 1) renderFlashcardsD3(containerId, flashcardData, currentIndex + 1);
+                });
+
+            lucide.createIcons();
+            if (window.MathJax) {
+                MathJax.typesetPromise([container.node()]).catch((err) => console.log(err.message));
+            }
+        }
+
+        function parseItemsFromText(text, type) {
+            try {
+                let cleanText = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+                
+                // Handle multiple items or retry messages in text
+                const startIndex = Math.min(
+                    cleanText.indexOf('{') === -1 ? Infinity : cleanText.indexOf('{'),
+                    cleanText.indexOf('[') === -1 ? Infinity : cleanText.indexOf('[')
+                );
+                const endIndex = Math.max(
+                    cleanText.lastIndexOf('}'),
+                    cleanText.lastIndexOf(']')
+                );
+
+                if (startIndex !== Infinity && endIndex !== -1) {
+                    cleanText = cleanText.substring(startIndex, endIndex + 1);
+                }
+                
+                // Handle common LLM JSON error: unescaped backslashes in LaTeX
+                try {
+                    var data = JSON.parse(cleanText);
+                } catch (e) {
+                    // Try to escape backslashes that are not valid escapes
+                    const fixedText = cleanText.replace(/\\(?![/"\\bfnrtu])/g, '\\\\');
+                    var data = JSON.parse(fixedText);
+                }
+
+                if (Array.isArray(data)) {
+                    // If it's an array of quizzes/flashcards, we just need to know if we got anything
+                    // The backend handles saving multiple. For UI purposes, we'll return the first one's items
+                    // or combine them if needed.
+                    if (type === 'quiz') {
+                        let allQuestions = [];
+                        data.forEach(item => { if(item.questions) allQuestions = allQuestions.concat(item.questions); });
+                        return allQuestions.map(q => ({
+                            question: q.question,
+                            options: q.options,
+                            correctIndex: q.correct_index !== undefined ? q.correct_index : q.correctIndex
+                        }));
+                    } else if (type === 'flashcard') {
+                        let allCards = [];
+                        data.forEach(item => { if(item.cards) allCards = allCards.concat(item.cards); });
+                        return allCards.map(c => ({ front: c.front, back: c.back }));
+                    }
+                }
+
+                if (type === 'quiz' && data.questions) {
+                    return data.questions.map(q => ({
+                        question: q.question,
+                        options: q.options,
+                        correctIndex: q.correct_index !== undefined ? q.correct_index : q.correctIndex
+                    }));
+                } else if (type === 'flashcard' && data.cards) {
+                    return data.cards.map(c => ({
+                        front: c.front,
+                        back: c.back
+                    }));
+                }
+            } catch (e) {
+                console.log("Failed to parse as JSON, falling back", e);
+            }
+
+            // Very simple parser for items like "1. Front: Back" or "Q: A"
+            const lines = text.split('\n');
+            const items = [];
+            
+            if (type === 'flashcard') {
+                // Try to find patterns like "**Front:** ... **Back:** ..."
+                const parts = text.split(/(?=\d+\.\s+|Front:)/i);
+                parts.forEach(p => {
+                    const frontMatch = p.match(/Front:\s*(.*?)(?=\s*Back:|$)/is);
+                    const backMatch = p.match(/Back:\s*(.*?)$/is);
+                    if (frontMatch && backMatch) {
+                        items.push({ front: frontMatch[1].trim(), back: backMatch[1].trim() });
+                    }
+                });
+                
+                // Fallback for simple "Q: A"
+                if (items.length === 0) {
+                    lines.forEach(l => {
+                        const m = l.match(/^\d+[\.\)]\s*(.*?):\s*(.*)$/);
+                        if (m) items.push({ front: m[1].trim(), back: m[2].trim() });
+                    });
+                }
+            } else if (type === 'quiz') {
+                // Simplified quiz parser
+                const qParts = text.split(/\d+\.\s+/).filter(p => p.trim().length > 0);
+                qParts.forEach(p => {
+                    const lines = p.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                    const question = lines[0];
+                    const options = lines.slice(1).filter(l => l.match(/^[A-D][\.\)]/i)).map(l => l.replace(/^[A-D][\.\)]\s*/i, ''));
+                    if (question && options.length >= 2) {
+                        items.push({ question, options, correctIndex: 0 }); // Assuming first is correct for mock
+                    }
+                });
+            }
+            
+            return items;
+        }
+
+        function openCanvasWithContent(type, content) {
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = type === 'quiz' ? 'Quiz Session' : 'Flashcards Session';
+            canvas.classList.remove('hidden');
+            
+            const items = parseItemsFromText(content, type);
+            if (items.length === 0) {
+                canvasContent.innerHTML = `<div class="p-4 text-gray-500 italic">Could not parse ${type} data. Showing raw text:<br><pre class="mt-2 text-xs bg-gray-50 p-2 rounded">${content}</pre></div>`;
+                return;
+            }
+
+            canvasContent.innerHTML = `<div id="canvas-render-target"></div>`;
+            if (type === 'quiz') {
+                renderQuizD3('canvas-render-target', { questions: items }, 0);
+            } else {
+                renderFlashcardsD3('canvas-render-target', { items: items }, 0);
+            }
+        }
+
+        // Configure marked.js to allow custom HTML from the LLM
+        const markedOptions = {
+            extensions: [mathExtension],
+            // In a production app, we would sanitize here, but we trust the LLM to return safe HTML for UI elements.
+        };
+
+        function processMathAndMarkdown(text) {
+            if (!text) return "";
+            // Robust preprocessing for common LLM unescaped math delimiters
+            // Convert [ formula ] to \[ formula \] and ( formula ) to \( formula \)
+            // but only if they seem to contain math-like characters to avoid false positives
+            let processed = text;
+            
+            // 1. Convert block math [ ... ] if it contains mathematical operators
+            processed = processed.replace(/^\[\s*([\s\S]*?)\s*\]$/gm, (match, formula) => {
+                if (formula.match(/[=\+\-\\\^_\{\}]/)) {
+                    return '\\[' + formula + '\\]';
+                }
+                return match;
+            });
+            
+            // 2. Convert inline math ( ... ) if it's a single variable or contains math ops
+            // and is not part of a larger sentence structure that makes it look like a citation
+            processed = processed.replace(/(^|\s)\(\s*([a-zA-Z0-9\theta\pi\alpha\beta\gamma\delta\epsilon\phi\psi\omega\sigma\tau\lambda\mu\nu\rho]+)\s*\)(\s|$|[.,!?;])/g, (match, before, content, after) => {
+                if (content.length <= 3 || content.match(/[=\+\-\\\^_\{\}]/)) {
+                    return before + '\\(' + content + '\\)' + after;
+                }
+                return match;
+            });
+
+            return marked.parse(processed, markedOptions);
+        }
+
+        let currentGoals = [];
+        let activeGoal = null;
+
+        function viewOriginalTree(title, encodedTree, startPage, endPage) {
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = `Original Tree: ${title}`;
+            canvas.classList.remove('hidden');
+            
+            let treeData = [];
+            try {
+                treeData = JSON.parse(decodeURIComponent(encodedTree));
+            } catch(e) {}
+            
+            const renderTreeHtml = (nodes) => {
+                if (!nodes || nodes.length === 0) return '';
+                let html = '<ul class="list-disc pl-5 mt-2 space-y-1 text-sm text-gray-700">';
+                nodes.forEach(n => {
+                    html += `<li><span class="font-semibold">${escapeHtml(n.title)}</span>`;
+                    if (n.pages && n.pages.length > 0) {
+                        html += ` <span class="text-xs text-blue-500">(Pages: ${n.pages.join(', ')})</span>`;
+                    }
+                    if (n.children && n.children.length > 0) {
+                        html += renderTreeHtml(n.children);
+                    }
+                    html += `</li>`;
+                });
+                html += '</ul>';
+                return html;
+            };
+
+            let pagesListHtml = '';
+            if (startPage && endPage && startPage <= endPage) {
+                const pagesArr = [];
+                for (let i = parseInt(startPage); i <= parseInt(endPage); i++) {
+                    pagesArr.push(i);
+                }
+                pagesListHtml = `<div class="mb-4 text-xs text-gray-600 bg-gray-50 p-3 rounded-lg border border-gray-100 leading-relaxed">
+                    <span class="font-bold text-gray-800">All Pages in Chapter:</span> ${pagesArr.join(', ')}
+                </div>`;
+            }
+
+            canvasContent.innerHTML = `
+                <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-200 mt-4 mx-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-gray-900">Tree Before Preprocessing</h3>
+                        ${startPage && endPage ? `<span class="text-xs font-semibold bg-blue-100 text-blue-700 px-3 py-1 rounded-full">Pages: ${startPage} - ${endPage}</span>` : ''}
+                    </div>
+                    ${pagesListHtml}
+                    <div class="overflow-y-auto max-h-[50vh] custom-scrollbar pr-4 border-t border-gray-100 pt-4">
+                        ${renderTreeHtml(treeData) || '<p class="text-gray-500 italic">No original tree data found.</p>'}
+                    </div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function showPageSummary(title, text) {
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = `Summary: ${title}`;
+            canvas.classList.remove('hidden');
+            
+            canvasContent.innerHTML = `
+                <div class="prose prose-sm max-w-none ai-bubble p-6">
+                    ${processMathAndMarkdown(text)}
+                </div>
+            `;
+            if (window.MathJax) {
+                MathJax.typesetPromise([canvasContent]).catch(err => console.log(err.message));
+            }
+            lucide.createIcons();
+        }
+
+        async function showTopicDescription(topicName) {
+            if (!activeGoal) return;
+            
+            // Show canvas with loading state
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = `Topic: ${topicName}`;
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = '<div class="flex justify-center p-10"><i data-lucide="loader-2" class="w-8 h-8 animate-spin text-blue-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                const res = await fetch(`/api/goals/${activeGoal.id}/topics/${encodeURIComponent(topicName)}/description`);
+                if (res.ok) {
+                    const data = await res.json();
+                    canvasContent.innerHTML = `
+                        <div class="prose prose-sm max-w-none ai-bubble">
+                            ${processMathAndMarkdown(data.description)}
+                        </div>
+                    `;
+                    if (window.MathJax) {
+                        MathJax.typesetPromise([canvasContent]).catch(err => console.log(err.message));
+                    }
+                } else {
+                    canvasContent.innerHTML = `
+                        <div class="p-6 text-center">
+                            <p class="text-gray-500 italic">Detailed visual description not available for this topic yet. It might still be processing.</p>
+                        </div>
+                    `;
+                }
+            } catch (err) {
+                canvasContent.innerHTML = '<p class="text-red-500 p-6 text-center">Failed to load description.</p>';
+            }
+            lucide.createIcons();
+        }
+
+        async function logout() {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/';
+        }
+
+        function showNewGoalModal() {
+            document.getElementById('new-goal-modal').classList.remove('hidden');
+        }
+
+        function hideNewGoalModal() {
+            document.getElementById('new-goal-modal').classList.add('hidden');
+        }
+
+        let tooltipTimeout;
+
+        function showTooltip(event, quote) {
+            clearTimeout(tooltipTimeout);
+            const tooltip = document.getElementById('global-reference-tooltip');
+            const quoteEl = document.getElementById('tooltip-quote');
+            
+            // Use processMathAndMarkdown for the tooltip as well
+            quoteEl.innerHTML = '"' + processMathAndMarkdown(quote) + '"';
+            
+            tooltip.classList.remove('hidden');
+            
+            // Position the tooltip
+            const rect = event.target.getBoundingClientRect();
+            let top = rect.top - tooltip.offsetHeight - 8;
+            let left = rect.left + (rect.width / 2) - (tooltip.offsetWidth / 2);
+            
+            // Bounds checking
+            if (top < 10) {
+                top = rect.bottom + 8;
+            }
+            if (left < 10) left = 10;
+            if (left + tooltip.offsetWidth > window.innerWidth - 10) {
+                left = window.innerWidth - tooltip.offsetWidth - 10;
+            }
+            
+            tooltip.style.top = top + 'px';
+            tooltip.style.left = left + 'px';
+            
+            tooltip.classList.remove('opacity-0');
+
+            if (window.MathJax) {
+                MathJax.typesetPromise([quoteEl]).catch((err) => console.log(err.message));
+            }
+        }
+
+        function hideTooltip(event) {
+            clearTimeout(tooltipTimeout);
+            tooltipTimeout = setTimeout(() => {
+                const tooltip = document.getElementById('global-reference-tooltip');
+                tooltip.classList.add('opacity-0');
+                setTimeout(() => {
+                    if (tooltip.classList.contains('opacity-0')) {
+                        tooltip.classList.add('hidden');
+                    }
+                }, 200);
+            }, 150); // Grace period to move between button and tooltip
+        }
+
+        // Tooltip hover persistence
+        const gTooltip = document.getElementById('global-reference-tooltip');
+        gTooltip.onmouseenter = () => { clearTimeout(tooltipTimeout); };
+        gTooltip.onmouseleave = (e) => { hideTooltip(e); };
+
+        document.getElementById('chat-box').addEventListener('scroll', () => { hideTooltip(); });
+
+        let confirmCallback = null;
+        function showConfirmModal(title, message, onConfirm, isDelete = true) {
+            document.getElementById('confirm-modal-title').textContent = title;
+            document.getElementById('confirm-modal-message').textContent = message;
+            
+            const icon = document.getElementById('confirm-modal-icon');
+            const iconBg = document.getElementById('confirm-modal-icon-bg');
+            const btn = document.getElementById('confirm-modal-btn');
+            
+            if (isDelete) {
+                icon.setAttribute('data-lucide', 'trash-2');
+                iconBg.className = 'w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4';
+                btn.className = 'flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-red-600/20';
+                btn.textContent = 'Delete';
+            } else {
+                icon.setAttribute('data-lucide', 'pencil');
+                iconBg.className = 'w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4';
+                btn.className = 'flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-600/20';
+                btn.textContent = 'Update';
+            }
+            
+            lucide.createIcons();
+            confirmCallback = onConfirm;
+            const modal = document.getElementById('confirm-modal');
+            const content = document.getElementById('confirm-modal-content');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function hideConfirmModal(confirmed) {
+            const content = document.getElementById('confirm-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                document.getElementById('confirm-modal').classList.add('hidden');
+                if (confirmed && confirmCallback) confirmCallback();
+                confirmCallback = null;
+            }, 200);
+        }
+
+        let inputCallback = null;
+        function showInputModal(title, initialValue, onSave) {
+            document.getElementById('input-modal-title').textContent = title;
+            document.getElementById('input-modal-value').value = initialValue || '';
+            inputCallback = onSave;
+            
+            const modal = document.getElementById('input-modal');
+            const content = document.getElementById('input-modal-content');
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('scale-95', 'opacity-0');
+                content.classList.add('scale-100', 'opacity-100');
+                document.getElementById('input-modal-value').focus();
+            }, 10);
+        }
+
+        function hideInputModal(saved) {
+            const content = document.getElementById('input-modal-content');
+            content.classList.remove('scale-100', 'opacity-100');
+            content.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                document.getElementById('input-modal').classList.add('hidden');
+                if (saved && inputCallback) {
+                    inputCallback(document.getElementById('input-modal-value').value.trim());
+                }
+                inputCallback = null;
+            }, 200);
+        }
+
+        document.getElementById('input-modal-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            hideInputModal(true);
+        });
+
+        const expandedTreeNodes = new Set();
+        const collapsedTreeNodes = new Set();
+
+        function toggleSidePanel() {
+            const panel = document.getElementById('side-panel');
+            const resizer = document.getElementById('sidebar-resizer');
+            if (panel.classList.contains('hidden-panel')) {
+                panel.classList.remove('hidden-panel');
+                panel.style.width = panel.dataset.lastWidth || '320px';
+                panel.classList.remove('opacity-0');
+                if (resizer) resizer.style.display = 'block';
+            } else {
+                panel.dataset.lastWidth = panel.style.width || '320px';
+                panel.classList.add('hidden-panel');
+                panel.style.width = '0px';
+                panel.classList.add('opacity-0');
+                if (resizer) resizer.style.display = 'none';
+            }
+        }
+
+        function showGoalsList() {
+            document.getElementById('goals-section').classList.remove('hidden');
+            document.getElementById('chapter-tree-section').classList.add('hidden');
+        }
+
+        function renderChapterTree(goal) {
+            const container = document.getElementById('chapter-tree-container');
+            container.innerHTML = '';
+            
+            let chapters = [];
+            try {
+                if (goal.chapters_data) chapters = JSON.parse(goal.chapters_data);
+            } catch(e) {}
+            
+            if (chapters.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-400 italic">No structured map available for this goal.</p>';
+                return;
+            }
+
+            const getTopicsForPage = (targetPage) => {
+                const topics = [];
+                chapters.forEach(c => {
+                    if (parseInt(c.start) === parseInt(targetPage)) {
+                        topics.push(c.title);
+                    }
+                    if (c.tree) {
+                        const traverse = (nodes) => {
+                            nodes.forEach(n => {
+                                const pm = n.title.match(/\(Page\s+(\d+)\)/i);
+                                const pn = pm ? pm[1] : c.start;
+                                if (parseInt(pn) === parseInt(targetPage)) {
+                                    topics.push(n.title.replace(/\(Page\s+\d+\)/i, '').trim());
+                                }
+                                if (n.children) traverse(n.children);
+                            });
+                        };
+                        traverse(c.tree);
+                    }
+                });
+                return topics;
+            };
+
+            // Automatically expand active chapter and its nodes
+            if (window.__activeChapterTitle) {
+                chapters.forEach(c => {
+                    if (c.title === window.__activeChapterTitle) {
+                        const chapterId = `chapter_${c.id}`;
+                        collapsedTreeNodes.delete(chapterId);
+                        
+                        if (c.tree) {
+                            const expandNodes = (nodes, prefix) => {
+                                nodes.forEach((n, idx) => {
+                                    const nodeId = `${prefix}_${idx}`;
+                                    expandedTreeNodes.add(nodeId);
+                                    if (n.children) expandNodes(n.children, nodeId);
+                                });
+                            };
+                            expandNodes(c.tree, chapterId);
+                        }
+                    }
+                });
+            }
+
+            const isChapterComplete = (chapter) => {
+                if (!chapter.tree) return true;
+                let allComplete = true;
+                const checkNodes = (nodes, prefix) => {
+                    nodes.forEach((n, idx) => {
+                        const nodeId = `${prefix}_${idx}`;
+                        if (n.title.startsWith("---------")) {
+                            const checkboxId = `chk_${nodeId}`;
+                            const isCompleted = localStorage.getItem(`${checkboxId}_completed`) === 'true';
+                            if (!isCompleted) allComplete = false;
+                        }
+                        if (n.children && allComplete) checkNodes(n.children, nodeId);
+                    });
+                };
+                checkNodes(chapter.tree, `chapter_${chapter.id}`);
+                return allComplete;
+            };
+
+            const treeRoot = document.createElement('div');
+            treeRoot.className = "space-y-4";
+
+            let prevChapterComplete = true;
+            let firstUnlockedFound = false;
+
+            // Ensure window.__expandedChapterId gets set if there is an active chapter
+            if (window.__activeChapterTitle && !window.__expandedChapterId) {
+                const activeC = chapters.find(c => c.title === window.__activeChapterTitle);
+                if (activeC) window.__expandedChapterId = `chapter_${activeC.id}`;
+            }
+
+            chapters.forEach(chapter => {
+                if (!chapter.selected) return;
+
+                const isLocked = !prevChapterComplete;
+
+                const chapterId = `chapter_${chapter.id}`;
+                
+                if (!window.__expandedChapterId && !isLocked && !firstUnlockedFound) {
+                    window.__expandedChapterId = chapterId;
+                    firstUnlockedFound = true;
+                }
+
+                const chapterEl = document.createElement('div');
+                chapterEl.className = `flex flex-col gap-1 ${isLocked ? 'opacity-60' : ''}`;
+                
+                const isProcessing = chapter.status === 'loading' || (chapter.status !== 'completed' && goal.status === 'processing');
+                const statusIndicator = isProcessing ? '<i data-lucide="loader-2" class="w-3 h-3 animate-spin text-blue-400 inline ml-1"></i>' : '';
+                const statusText = isProcessing ? '<div class="text-[9px] text-blue-400 ml-6 animate-pulse">learning chapter...</div>' : '';
+
+                // Only the expanded chapter should not be collapsed
+                let isCollapsed = window.__expandedChapterId !== chapterId;
+                if (isLocked) isCollapsed = true; // Always collapsed if locked
+
+                const hasChildren = chapter.tree && chapter.tree.length > 0;
+                let chevronHtml = hasChildren ? `<i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-down'}" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0 cursor-pointer hover:text-gray-600 transition-colors" onclick="event.stopPropagation(); toggleTreeNode('${chapterId}', ${goal.id}, true)"></i>` : `<div class="w-4 h-4 flex-shrink-0"></div>`;
+                
+                if (isLocked) {
+                    chevronHtml = `<i data-lucide="lock" class="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0"></i>`;
+                }
+
+                const chapterTopicsData = encodeURIComponent(JSON.stringify(getTopicsForPage(chapter.start)));
+                const chapterHeader = document.createElement('div');
+                chapterHeader.className = "flex items-start gap-2 group cursor-pointer p-1 rounded hover:bg-blue-50/50 transition-colors";
+                chapterHeader.onclick = () => {
+                    highlightInPdf(chapter.title);
+                    window.__activeChapterTitle = chapter.title;
+                    window.__activeGoalId = activeGoal ? activeGoal.id : null;
+                    if (activeGoal) {
+                        localStorage.setItem(`lastChapter_${activeGoal.id}`, chapter.title);
+                        showGoalContent(activeGoal, false);
+                    }
+                };
+
+                let originalTreeIcon = '';
+                if (chapter.original_tree) {
+                    const encodedTree = encodeURIComponent(JSON.stringify(chapter.original_tree)).replace(/'/g, "%27");
+                    const safeTitle = chapter.title.replace(/'/g, "\\'");
+                    originalTreeIcon = `<button type="button" class="text-gray-400 hover:text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2 flex-shrink-0" onclick="event.stopPropagation(); viewOriginalTree('${safeTitle}', '${encodedTree}', ${chapter.start}, ${chapter.end || 'null'})" title="View Original Tree before preprocessing"><i data-lucide="git-branch" class="w-3.5 h-3.5"></i></button>`;
+                }
+                
+                let downloadIcon = '';
+                if (chapter.page_summaries && chapter.page_summaries.length > 0) {
+                    downloadIcon = `<button type="button" class="text-gray-400 hover:text-green-500 opacity-0 group-hover:opacity-100 transition-opacity ml-1.5 flex-shrink-0" onclick="event.stopPropagation(); downloadChapterSummaries(${chapter.id})" title="Download Chapter Summaries (MD)"><i data-lucide="download" class="w-3.5 h-3.5"></i></button>`;
+                }
+
+                chapterHeader.innerHTML = `
+                    ${chevronHtml}
+                    <i data-lucide="book" class="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center">
+                            <span class="text-xs font-bold text-gray-800 leading-tight">${chapter.title}</span>
+                            ${originalTreeIcon}
+                            ${downloadIcon}
+                            ${statusIndicator}
+                        </div>
+                    </div>
+                    <span class="page-badge" onclick="event.stopPropagation(); goToPage(${chapter.start}, '${chapterTopicsData}')">p. ${chapter.start}</span>
+                `;
+                chapterEl.appendChild(chapterHeader);
+                if (statusText) {
+                    const statusEl = document.createElement('div');
+                    statusEl.innerHTML = statusText;
+                    chapterEl.appendChild(statusEl);
+                }
+
+                if (chapter.tree && chapter.tree.length > 0) {
+                    // Check if the tree starts with the chapter itself and remove it if so
+                    let nodesToRender = chapter.tree;
+                    if (chapter.tree.length === 1) {
+                        const rootTitle = chapter.tree[0].title.replace(/\(Page\s+\d+\)/i, '').trim().toLowerCase();
+                        const chapterTitle = chapter.title.toLowerCase();
+                        
+                        const normalize = (s) => s.replace(/[^a-z0-9]/g, '');
+                        const normRoot = normalize(rootTitle);
+                        const normChapter = normalize(chapterTitle);
+
+                        if (normRoot === normChapter || normChapter.includes(normRoot) || normRoot.includes(normChapter)) {
+                            if (chapter.tree[0].children && chapter.tree[0].children.length > 0) {
+                                nodesToRender = chapter.tree[0].children;
+                            }
+                        }
+                    }
+
+                    // Gather all unique page numbers in this chapter's tree to calculate node ranges
+                    const allNodePages = [parseInt(chapter.start)];
+                    const gatherPages = (nodes) => {
+                        nodes.forEach(n => {
+                            const pm = n.title.match(/\(Page\s+(\d+)\)/i);
+                            if (pm) allNodePages.push(parseInt(pm[1]));
+                            if (n.children) gatherPages(n.children);
+                        });
+                    };
+                    gatherPages(nodesToRender);
+                    const uniquePages = [...new Set(allNodePages)].sort((a,b) => a - b);
+
+                    const subList = document.createElement('div');
+                    subList.className = `ml-5 pl-2 border-l-2 border-blue-100 flex flex-col gap-3 mt-1 ${isCollapsed ? 'hidden' : ''}`;
+
+                    let sequentialLock = false;
+
+                    const renderNodes = (nodes, targetContainer, prefix) => {
+                        nodes.forEach((node, idx) => {
+                            const nodeId = `${prefix}_${idx}`;
+                            const nodeEl = document.createElement('div');
+                            nodeEl.className = `flex flex-col gap-1 min-w-0 ${sequentialLock ? 'opacity-50 pointer-events-none' : ''}`;
+                            
+                            if (node.title.startsWith("---------")) {
+                                const sectionName = node.title.replace("---------", "").trim().toLowerCase();
+                                
+                                const sectionColors = {
+                                    'pre-requisites': 'border-purple-400 text-purple-700',
+                                    'pre-requisite': 'border-purple-400 text-purple-700',
+                                    'chapter summary': 'border-blue-400 text-blue-700',
+                                    'reading': 'border-green-400 text-green-700',
+                                    'video': 'border-orange-400 text-orange-700',
+                                    'feynmann technique': 'border-pink-400 text-pink-700',
+                                    'what-if analysis': 'border-indigo-400 text-indigo-700',
+                                    'quiz': 'border-red-400 text-red-700',
+                                    'flashcard': 'border-yellow-400 text-yellow-700'
+                                };
+                                const defaultColor = 'border-gray-400 text-gray-700';
+                                const colorClass = sectionColors[sectionName] || defaultColor;
+                                
+                                nodeEl.className = `flex items-center gap-2 min-w-0 mt-1 mb-1 p-1.5 border-2 rounded-lg bg-white/80 backdrop-blur-sm cursor-pointer transition-all hover:shadow-md ${colorClass}`;
+                                
+                                const checkboxId = `chk_${nodeId}`;
+                                // Check local storage if previously clicked/completed
+                                const isClicked = localStorage.getItem(`${checkboxId}_clicked`) === 'true';
+                                const isCompleted = localStorage.getItem(`${checkboxId}_completed`) === 'true';
+                                
+                                nodeEl.innerHTML = `
+                                    <input type="checkbox" id="${checkboxId}" class="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer" ${isClicked ? '' : 'disabled'} ${isCompleted ? 'checked' : ''}>
+                                    <span class="text-xs font-bold uppercase tracking-wider flex-1">${sectionName}</span>
+                                    <i data-lucide="activity" class="w-3.5 h-3.5 opacity-50"></i>
+                                `;
+                                
+                                nodeEl.onclick = (e) => {
+                                    if (e.target.tagName.toLowerCase() === 'input') {
+                                        // User clicked the checkbox itself
+                                        if (e.target.disabled) {
+                                            e.preventDefault();
+                                            return;
+                                        }
+                                        localStorage.setItem(`${checkboxId}_completed`, e.target.checked);
+                                        if (activeGoal) {
+                                            setTimeout(() => renderChapterTree(activeGoal), 10);
+                                        }
+                                        return;
+                                    }
+                                    
+                                    // User clicked the section body
+                                    const chk = document.getElementById(checkboxId);
+                                    if (chk && chk.disabled) {
+                                        chk.disabled = false;
+                                        localStorage.setItem(`${checkboxId}_clicked`, 'true');
+                                    }
+                                    
+                                    // Make the chat relocate to this chapter
+                                    window.__activeChapterTitle = chapter.title;
+                                    window.__activeGoalId = activeGoal ? activeGoal.id : null;
+                                    if (activeGoal) {
+                                        localStorage.setItem(`lastChapter_${activeGoal.id}`, chapter.title);
+                                        await showGoalContent(activeGoal, false);
+                                        renderChapterTree(activeGoal);
+                                    }
+                                    
+                                    // Trigger chat actions based on section type
+                                    const chatInput = document.getElementById('chat-input');
+                                    if (chatInput) {
+                                        let prevTopicTitle = window.__activeChapterTitle || "this topic";
+                                        let prevNode = null;
+                                        for (let i = idx - 1; i >= 0; i--) {
+                                            if (!nodes[i].title.startsWith("---------")) {
+                                                prevNode = nodes[i];
+                                                prevTopicTitle = nodes[i].title.replace(/\(Page\s+\d+\)/i, '').trim();
+                                                break;
+                                            }
+                                        }
+                                        
+                                        let stackedSummaries = [];
+                                        let pagesStr = "";
+                                        if (prevNode && chapter.page_summaries) {
+                                            const pageMatch = prevNode.title.match(/\(Page\s+(\d+)\)/i);
+                                            const pageNum = pageMatch ? pageMatch[1] : (prevNode.pages && prevNode.pages.length > 0 ? prevNode.pages[0] : chapter.start);
+                                            
+                                            if (prevNode.pages && prevNode.pages.length > 0) {
+                                                pagesStr = `(Pages: ${prevNode.pages.join(', ')})`;
+                                                prevNode.pages.forEach(p => {
+                                                    const summaryObj = chapter.page_summaries.find(s => parseInt(s.page_number) === parseInt(p));
+                                                    if (summaryObj) {
+                                                        stackedSummaries.push(`**Page ${p}**\n${summaryObj.analysis}`);
+                                                    }
+                                                });
+                                            } else {
+                                                pagesStr = `(Page ${pageNum})`;
+                                                const pageIdx = uniquePages.indexOf(parseInt(pageNum));
+                                                const nextPageNum = (pageIdx !== -1 && pageIdx < uniquePages.length - 1) ? uniquePages[pageIdx + 1] : Infinity;
+                                                
+                                                chapter.page_summaries.forEach(s => {
+                                                    const p = parseInt(s.page_number);
+                                                    if (p >= parseInt(pageNum) && p < nextPageNum) {
+                                                        stackedSummaries.push(`**Page ${p}**\n${s.analysis}`);
+                                                    }
+                                                });
+                                            }
+                                        }
+                                        
+                                        window.__chatHiddenContext = "";
+                                        if (stackedSummaries.length > 0) {
+                                            window.__chatHiddenContext = `in this example, ;;;;; ${prevTopicTitle} ${pagesStr}\n--------- ${sectionName};;;; the ${sectionName} will consider ${prevTopicTitle} and the information on ${pagesStr.toLowerCase()} before giving the ${sectionName}\n\n${stackedSummaries.join('\\n\\n')}`;
+                                        }
+                                        
+                                        if (sectionName.includes('pre-requisite')) {
+                                            chatInput.value = "what are the pre-requisites for " + prevTopicTitle + "?";
+                                        } else if (sectionName.includes('chapter summary')) {
+                                            insertPrompt('@summary');
+                                            chatInput.value = "what is " + prevTopicTitle + " about?";
+                                        } else if (sectionName.includes('video')) {
+                                            insertPrompt('@video');
+                                            chatInput.value = prevTopicTitle;
+                                        } else if (sectionName.includes('quiz')) {
+                                            insertPrompt('@quiz');
+                                            chatInput.value = "create a quiz about " + prevTopicTitle;
+                                        } else if (sectionName.includes('flashcard')) {
+                                            insertPrompt('@flashcard');
+                                            chatInput.value = "create flashcards for " + prevTopicTitle;
+                                        } else if (sectionName.includes('feynmann') || sectionName.includes('what-if')) {
+                                            chatInput.value = "Let's do a " + sectionName + " on " + prevTopicTitle + ".";
+                                        } else if (sectionName.includes('reading')) {
+                                            // Normal reading: usually just highlights current/previous heading if we know it.
+                                            // But no specific chat action required, maybe just focus PDF.
+                                            chatInput.value = "";
+                                        }
+                                        
+                                        if (chatInput.value) {
+                                            closeFixedCanvas();
+                                            document.getElementById('chat-form').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                                        }
+                                    }
+                                };
+                                
+                                targetContainer.appendChild(nodeEl);
+                                
+                                if (!isCompleted) {
+                                    sequentialLock = true;
+                                }
+                                
+                                // In case the LLM incorrectly nested nodes inside a section, still render them
+                                if (node.children && node.children.length > 0) {
+                                    const childrenList = document.createElement('div');
+                                    childrenList.className = `ml-2 border-l border-gray-100 flex flex-col gap-1 mt-1 pl-2`;
+                                    renderNodes(node.children, childrenList, nodeId);
+                                    nodeEl.appendChild(childrenList);
+                                }
+                                
+                                return; // Skip normal node rendering
+                            }
+                            
+                            const pageMatch = node.title.match(/\(Page\s+(\d+)\)/i);
+                            const pageNum = pageMatch ? pageMatch[1] : (node.pages && node.pages.length > 0 ? node.pages[0] : chapter.start);
+                            const displayTitle = node.title.replace(/\(Page\s+\d+\)/i, '').trim();
+                            const isNodeCollapsed = collapsedTreeNodes.has(nodeId); // Changed to default expanded
+                            const nodeHasChildren = node.children && node.children.length > 0;
+                            const nodeChevron = nodeHasChildren ? `<i data-lucide="${isNodeCollapsed ? 'chevron-right' : 'chevron-down'}" class="w-3 h-3 text-gray-400 mt-1 flex-shrink-0 cursor-pointer hover:text-gray-600 transition-colors" onclick="event.stopPropagation(); toggleTreeNode('${nodeId}', ${goal.id}, false)"></i>` : `<div class="w-1 h-1 rounded-full bg-blue-400 mt-1.5 flex-shrink-0 mx-1"></div>`;
+
+                            const nodeHeader = document.createElement('div');
+                            nodeHeader.className = "flex items-start gap-1 cursor-pointer group";
+                            nodeHeader.onclick = (e) => { 
+                                e.stopPropagation(); 
+                                // Clean up the title to remove page numbers if they exist for searching
+                                const cleanSearchTitle = displayTitle.replace(/\(Page\s+\d+\)/i, '').trim();
+                                highlightInPdf(cleanSearchTitle); 
+                                
+                                // Make the chat relocate to this chapter
+                                window.__activeChapterTitle = chapter.title;
+                                window.__activeGoalId = activeGoal ? activeGoal.id : null;
+                                if (activeGoal) {
+                                    localStorage.setItem(`lastChapter_${activeGoal.id}`, chapter.title);
+                                    showGoalContent(activeGoal, false);
+                                    renderChapterTree(activeGoal);
+                                }
+                            };
+                            
+                            // Check if there are summaries for this page (and stack if it spans multiple pages)
+                            let stackedSummaries = [];
+                            if (chapter.page_summaries) {
+                                if (node.pages && node.pages.length > 0) {
+                                    node.pages.forEach(p => {
+                                        const summaryObj = chapter.page_summaries.find(s => parseInt(s.page_number) === parseInt(p));
+                                        if (summaryObj) {
+                                            stackedSummaries.push(`**Page ${p}**\n${summaryObj.analysis}`);
+                                        }
+                                    });
+                                } else {
+                                    const pageIdx = uniquePages.indexOf(parseInt(pageNum));
+                                    const nextPageNum = (pageIdx !== -1 && pageIdx < uniquePages.length - 1) ? uniquePages[pageIdx + 1] : Infinity;
+                                    
+                                    chapter.page_summaries.forEach(s => {
+                                        const p = parseInt(s.page_number);
+                                        if (p >= parseInt(pageNum) && p < nextPageNum) {
+                                            stackedSummaries.push(`**Page ${p}**\n${s.analysis}`);
+                                        }
+                                    });
+                                }
+                            }
+                            let summaryText = stackedSummaries.join('\n\n---\n\n');
+                            
+                            const safeTitle = displayTitle.replace(/'/g, "&#39;");
+                            // We need to properly escape for JS strings in onclick
+                            const safeSummary = summaryText.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, '"').replace(/\n/g, "\\n").replace(/\r/g, "");
+                            const summaryBtnHtml = summaryText ? `<button type="button" class="text-gray-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex-shrink-0" onclick="event.stopPropagation(); showPageSummary('${safeTitle}', '${safeSummary}')" title="View Summary"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>` : '';
+
+                            const nodeTopicsData = encodeURIComponent(JSON.stringify(getTopicsForPage(pageNum)));
+                            nodeHeader.innerHTML = `
+                                ${nodeChevron}
+                                <span class="text-[11px] font-semibold text-gray-700 group-hover:text-blue-600 transition-colors flex-1 flex items-center break-words min-w-0 pr-1 leading-snug">${displayTitle} ${summaryBtnHtml}</span>
+                                <span class="page-badge" onclick="event.stopPropagation(); goToPage(${pageNum}, '${nodeTopicsData}')">p. ${pageNum}</span>
+                            `;
+                            nodeEl.appendChild(nodeHeader);
+
+                            if (nodeHasChildren) {
+                                const childrenList = document.createElement('div');
+                                childrenList.className = `ml-2 border-l border-gray-100 flex flex-col gap-1 mt-1 pl-2 ${isNodeCollapsed ? 'hidden' : ''}`;
+                                renderNodes(node.children, childrenList, nodeId);
+                                nodeEl.appendChild(childrenList);
+                            }
+                            targetContainer.appendChild(nodeEl);
+                        });
+                    };
+                    renderNodes(nodesToRender, subList, chapterId);
+                    chapterEl.appendChild(subList);
+                } else if (isProcessing) {
+                     const loadingMsg = document.createElement('p');
+                     loadingMsg.className = 'text-[10px] text-blue-400 italic ml-6 mt-1 animate-pulse';
+                     loadingMsg.textContent = 'AI is mapping this chapter...';
+                     chapterEl.appendChild(loadingMsg);
+                }
+                treeRoot.appendChild(chapterEl);
+
+                // Update prevChapterComplete for the NEXT chapter
+                prevChapterComplete = isChapterComplete(chapter);
+            });
+
+            container.appendChild(treeRoot);
+            lucide.createIcons();
+        }
+
+        function toggleTreeNode(nodeId, goalId, isChapter = false) {
+            if (isChapter) {
+                if (window.__expandedChapterId === nodeId) {
+                    window.__expandedChapterId = null;
+                } else {
+                    window.__expandedChapterId = nodeId;
+                }
+            } else {
+                const set = expandedTreeNodes;
+                if (set.has(nodeId)) {
+                    set.delete(nodeId);
+                } else {
+                    set.add(nodeId);
+                }
+            }
+            if (activeGoal && activeGoal.id === goalId) {
+                renderChapterTree(activeGoal);
+            }
+        }
+
+        function downloadChapterSummaries(chapterId) {
+            if (!activeGoal) return;
+            
+            let chapters = [];
+            try {
+                if (activeGoal.chapters_data) chapters = JSON.parse(activeGoal.chapters_data);
+            } catch(e) {
+                alert("Could not load chapter data for download.");
+                return;
+            }
+
+            const chapter = chapters.find(c => c.id === chapterId);
+            if (!chapter) {
+                alert("Chapter not found.");
+                return;
+            }
+
+            if (!chapter.page_summaries || chapter.page_summaries.length === 0) {
+                alert("No page summaries available for this chapter yet.");
+                return;
+            }
+
+            let md = `# Chapter Summary: ${chapter.title}\n`;
+            md += `*Part of the learning goal: ${activeGoal.title}*\n`;
+            md += `Generated on: ${new Date().toLocaleString()}\n\n`;
+            md += `**PDF Range:** Pages ${chapter.start} - ${chapter.end}\n\n---\n\n`;
+
+            chapter.page_summaries.forEach(s => {
+                md += `## Page ${s.page_number}\n\n${s.analysis}\n\n`;
+            });
+
+            const blob = new Blob([md], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${chapter.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_summaries.md`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        document.getElementById('pdf-upload').onchange = function() {
+            const file = this.files[0];
+            if (file) {
+                if (file.size > 50 * 1024 * 1024) {
+                    alert('File too large. Max 50MB.');
+                    this.value = '';
+                    document.getElementById('file-name').textContent = 'Click or drag PDF here';
+                } else {
+                    document.getElementById('file-name').textContent = file.name;
+                    document.getElementById('file-name').classList.add('text-blue-400');
+                }
+            }
+        };
+
+        async function loadGoals() {
+            const res = await fetch('/api/goals');
+            if (res.ok) {
+                currentGoals = await res.json();
+                renderGoals();
+            }
+        }
+
+        function renderGoals() {
+            const list = document.getElementById('goals-list');
+            list.innerHTML = '';
+
+            const emptyStateBtnText = document.getElementById('empty-state-btn-text');
+            const activityBtn = document.getElementById('activity-new-goal-btn');
+            
+            if (currentGoals.length > 0) {
+                if (emptyStateBtnText) emptyStateBtnText.textContent = 'Create Goal';
+                if (activityBtn) activityBtn.title = 'Create Goal';
+            } else {
+                if (emptyStateBtnText) emptyStateBtnText.textContent = 'Create My First Goal';
+                if (activityBtn) activityBtn.title = 'Create My First Goal';
+            }
+
+            currentGoals.forEach(g => {
+                const item = document.createElement('div');
+                item.className = `group p-3 rounded-xl cursor-pointer transition-all cursor-hover flex items-center gap-3 ${activeGoal && activeGoal.id === g.id ? 'active-icon' : ''}`;
+                item.onclick = () => selectGoal(g);
+                
+                let statusColor = 'bg-blue-500';
+                if (g.status === 'processing') statusColor = 'bg-yellow-400 animate-pulse';
+                if (g.status === 'completed') statusColor = 'bg-green-500';
+                if (g.status === 'failed') statusColor = 'bg-red-500';
+
+                item.innerHTML = `
+                    <div class="w-2 h-2 rounded-full ${statusColor} flex-shrink-0" title="Status: ${g.status}"></div>
+                    <span class="text-sm truncate font-medium flex-1">${g.title}</span>
+                    <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="event.stopPropagation(); renameGoal(${g.id}, '${g.title.replace(/'/g, "\\'")}')" class="p-1 hover:text-blue-600" title="Rename">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="event.stopPropagation(); deleteGoal(${g.id})" class="p-1 hover:text-red-600" title="Delete">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+            lucide.createIcons();
+        }
+
+        async function deleteGoal(id) {
+            showConfirmModal('Delete Goal', 'Are you sure you want to delete this goal and all associated data?', async () => {
+                const res = await fetch(`/api/goals/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    if (activeGoal && activeGoal.id === id) {
+                        activeGoal = null;
+                        document.getElementById('empty-state').classList.remove('hidden');
+                        document.getElementById('pdf-container').classList.add('hidden');
+                        document.getElementById('chat-container').classList.add('hidden');
+                        document.getElementById('resizer').classList.add('hidden');
+                        document.getElementById('active-goal-title').textContent = 'Select a goal to start learning';
+                    }
+                    localStorage.removeItem(`chat_${id}`);
+                    await loadGoals();
+                } else {
+                    alert('Failed to delete goal');
+                }
+            }, true);
+        }
+
+        async function renameGoal(id, currentTitle) {
+            showInputModal('Rename Goal', currentTitle, (newTitle) => {
+                if (!newTitle || newTitle === currentTitle) return;
+                
+                showConfirmModal('Rename Goal', `Are you sure you want to rename "${currentTitle}" to "${newTitle}"?`, async () => {
+                    const res = await fetch(`/api/goals/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ title: newTitle })
+                    });
+                    if (res.ok) {
+                        if (activeGoal && activeGoal.id === id) {
+                            activeGoal.title = newTitle;
+                            document.getElementById('active-goal-title').textContent = newTitle;
+                        }
+                        await loadGoals();
+                    } else {
+                        alert('Failed to rename goal');
+                    }
+                }, false);
+            });
+        }
+
+        let statusPollInterval = null;
+        let chatPollInterval = null;
+
+        function selectGoal(goal) {
+            activeGoal = goal;
+            localStorage.setItem('lastGoalId', goal.id);
+            
+            // Check if we have a last chapter for this goal
+            const lastChapter = localStorage.getItem(`lastChapter_${goal.id}`);
+            window.__activeChapterTitle = lastChapter || null;
+            window.__activeGoalId = goal.id;
+            
+            renderGoals();
+            if (chatPollInterval) {
+                clearInterval(chatPollInterval);
+                chatPollInterval = null;
+            }
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('active-goal-title').textContent = goal.title;
+            
+            if (statusPollInterval) clearInterval(statusPollInterval);
+
+            let hasLoadingChapters = false;
+            try {
+                if (goal.chapters_data) {
+                    const chapters = JSON.parse(goal.chapters_data);
+                    hasLoadingChapters = chapters.some(c => c.selected && c.status === 'loading');
+                }
+            } catch(e){}
+
+            if (goal.status === 'completed') {
+                showGoalContent(goal);
+                // Switch sidebar view to Tree
+                document.getElementById('goals-section').classList.add('hidden');
+                document.getElementById('chapter-tree-section').classList.remove('hidden');
+                renderChapterTree(goal);
+                if (hasLoadingChapters) {
+                    startStatusPolling(goal.id);
+                }
+            } else if (goal.status === 'failed') {
+                showGoalError(goal);
+                showGoalsList();
+            } else if (goal.status === 'waiting_for_chapters') {
+                showChapterSelection(goal);
+                showGoalsList();
+            } else {
+                showGoalProcessing(goal);
+                startStatusPolling(goal.id);
+                showGoalsList();
+            }
+        }
+
+        function showStructurePreview(goal) {
+            document.getElementById('pdf-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.add('hidden');
+            document.getElementById('resizer').classList.add('hidden');
+            document.getElementById('processing-container').classList.add('hidden');
+            document.getElementById('chapter-selection-container').classList.add('hidden');
+            document.getElementById('structure-preview-container').classList.remove('hidden');
+            
+            const container = document.getElementById('structure-list-container');
+            container.innerHTML = '';
+            
+            let chapters = [];
+            try {
+                if (goal.chapters_data) chapters = JSON.parse(goal.chapters_data);
+            } catch(e) {}
+            
+            chapters.forEach((chapter, cIdx) => {
+                if (!chapter.selected) return;
+
+                const chapterDiv = document.createElement('div');
+                chapterDiv.className = "border-b cursor-border last:border-b-0";
+                
+                let subchaptersHtml = '';
+                if (chapter.subchapters) {
+                    chapter.subchapters.forEach((sub, sIdx) => {
+                        subchaptersHtml += `
+                            <div class="ml-8 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                <div class="flex items-center justify-between mb-2">
+                                    <input type="text" value="${escapeHtml(sub.title)}" 
+                                        onchange="updateSubTitle(${cIdx}, ${sIdx}, this.value)"
+                                        class="font-bold text-gray-800 bg-transparent border-none focus:ring-2 focus:ring-blue-500 rounded px-1 flex-1">
+                                    <span class="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded-md ml-2 flex-shrink-0">
+                                        Pages ${sub.start_page} - ${sub.end_page}
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 mt-3" id="topics-${cIdx}-${sIdx}">
+                                    ${sub.topics.map((t, tIdx) => `
+                                        <div class="flex items-center gap-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs group/topic">
+                                            <span contenteditable="true" onblur="updateTopic(${cIdx}, ${sIdx}, ${tIdx}, this.innerText)" class="outline-none">${escapeHtml(t)}</span>
+                                            <button onclick="removeTopic(${cIdx}, ${sIdx}, ${tIdx})" class="text-gray-400 hover:text-red-500 opacity-0 group-hover/topic:opacity-100 transition-opacity">
+                                                <i data-lucide="x" class="w-3 h-3"></i>
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                    <button onclick="addTopic(${cIdx}, ${sIdx})" class="px-3 py-1.5 border border-dashed border-gray-300 text-gray-400 rounded-lg text-xs hover:border-blue-400 hover:text-blue-500 transition-all flex items-center gap-1">
+                                        <i data-lucide="plus" class="w-3 h-3"></i> Add Topic
+                                    </button>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                chapterDiv.innerHTML = `
+                    <div class="p-6 bg-white">
+                        <div class="flex items-center gap-3 mb-2">
+                            <i data-lucide="book" class="w-5 h-5 text-blue-500"></i>
+                            <h4 class="font-black text-gray-900 uppercase tracking-tight">${escapeHtml(chapter.title)}</h4>
+                        </div>
+                        ${subchaptersHtml}
+                    </div>
+                `;
+                container.appendChild(chapterDiv);
+            });
+            lucide.createIcons();
+        }
+
+        function updateSubTitle(cIdx, sIdx, val) {
+            let chapters = JSON.parse(activeGoal.chapters_data);
+            chapters[cIdx].subchapters[sIdx].title = val;
+            activeGoal.chapters_data = JSON.stringify(chapters);
+        }
+
+        function updateTopic(cIdx, sIdx, tIdx, val) {
+            let chapters = JSON.parse(activeGoal.chapters_data);
+            chapters[cIdx].subchapters[sIdx].topics[tIdx] = val.trim();
+            activeGoal.chapters_data = JSON.stringify(chapters);
+        }
+
+        function removeTopic(cIdx, sIdx, tIdx) {
+            let chapters = JSON.parse(activeGoal.chapters_data);
+            chapters[cIdx].subchapters[sIdx].topics.splice(tIdx, 1);
+            activeGoal.chapters_data = JSON.stringify(chapters);
+            showStructurePreview(activeGoal);
+        }
+
+        function addTopic(cIdx, sIdx) {
+            let chapters = JSON.parse(activeGoal.chapters_data);
+            chapters[cIdx].subchapters[sIdx].topics.push("New Topic");
+            activeGoal.chapters_data = JSON.stringify(chapters);
+            showStructurePreview(activeGoal);
+        }
+
+        async function saveAndConfirmStructure() {
+            if (!activeGoal) return;
+            const btn = document.getElementById('confirm-structure-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Finalizing...';
+            lucide.createIcons();
+
+            try {
+                // 1. Save current edited structure
+                await fetch(`/api/goals/${activeGoal.id}/update_structure`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chapters: JSON.parse(activeGoal.chapters_data) })
+                });
+
+                // 2. Trigger final processing
+                const res = await fetch(`/api/goals/${activeGoal.id}/confirm_topics`, {
+                    method: 'POST'
+                });
+
+                if (res.ok) {
+                    document.getElementById('structure-preview-container').classList.add('hidden');
+                    activeGoal.status = 'processing';
+                    activeGoal.status_message = 'Generating vector index and visual descriptions...';
+                    showGoalProcessing(activeGoal);
+                    startStatusPolling(activeGoal.id);
+                }
+            } catch (err) {
+                alert("Failed to confirm structure");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="check-circle" class="w-5 h-5"></i> Finalize & Start Learning';
+            }
+        }
+
+        function showChapterSelection(goal) {
+            document.getElementById('pdf-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.add('hidden');
+            document.getElementById('resizer').classList.add('hidden');
+            document.getElementById('processing-container').classList.add('hidden');
+            document.getElementById('chapter-selection-container').classList.remove('hidden');
+            
+            const listContainer = document.getElementById('chapters-list-container');
+            listContainer.innerHTML = '';
+            
+            let chapters = [];
+            try {
+                if (goal.chapters_data) chapters = JSON.parse(goal.chapters_data);
+            } catch(e) {}
+            
+            if (chapters.length === 0) {
+                listContainer.innerHTML = '<p class="text-sm text-gray-500">No chapters found. Please wait or recreate the goal.</p>';
+                return;
+            }
+            
+            chapters.forEach(c => {
+                const label = document.createElement('label');
+                label.className = `flex items-center gap-3 p-3 rounded-lg border cursor-border hover:bg-gray-50 cursor-pointer transition-colors mb-2 ${c.selected ? 'bg-blue-50/50 border-blue-200' : ''}`;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = "checkbox";
+                checkbox.className = "w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 chapter-checkbox";
+                checkbox.value = JSON.stringify(c);
+                if (c.selected) checkbox.checked = true;
+                
+                checkbox.onchange = function() {
+                    if (this.checked) {
+                        label.classList.add('bg-blue-50/50', 'border-blue-200');
+                    } else {
+                        label.classList.remove('bg-blue-50/50', 'border-blue-200');
+                    }
+                };
+                
+                const textContainer = document.createElement('div');
+                textContainer.className = "flex-1";
+                
+                const titleContainer = document.createElement('div');
+                titleContainer.className = "flex items-center gap-2";
+                
+                const title = document.createElement('div');
+                title.className = "font-medium text-gray-900";
+                title.textContent = c.title;
+                
+                titleContainer.appendChild(title);
+                if (c.selected) {
+                    const badge = document.createElement('span');
+                    badge.className = "text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold uppercase";
+                    badge.textContent = "Recommended";
+                    titleContainer.appendChild(badge);
+                }
+                
+                const pages = document.createElement('div');
+                pages.className = "text-xs text-gray-500";
+                pages.textContent = `Pages ${c.start} - ${c.end}`;
+                
+                textContainer.appendChild(titleContainer);
+                textContainer.appendChild(pages);
+                
+                label.appendChild(checkbox);
+                label.appendChild(textContainer);
+                listContainer.appendChild(label);
+            });
+        }
+        
+        async function submitChapters() {
+            if (!activeGoal) return;
+            const checkboxes = document.querySelectorAll('.chapter-checkbox');
+            const allChapters = [];
+            checkboxes.forEach(cb => {
+                try { 
+                    const chapter = JSON.parse(cb.value);
+                    chapter.selected = cb.checked;
+                    allChapters.push(chapter);
+                } catch(e){}
+            });
+            
+            const selectedCount = allChapters.filter(c => c.selected).length;
+            if (selectedCount === 0) {
+                alert("Please select at least one chapter.");
+                return;
+            }
+            
+            document.getElementById('submit-chapters-btn').disabled = true;
+            document.getElementById('submit-chapters-btn').innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin inline"></i> Processing...';
+            lucide.createIcons();
+            
+            try {
+                const res = await fetch(`/api/goals/${activeGoal.id}/select_chapters`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chapters: allChapters })
+                });
+                
+                if (res.ok) {
+                    document.getElementById('chapter-selection-container').classList.add('hidden');
+                    activeGoal.status = 'processing';
+                    activeGoal.status_message = 'Starting processing of the first chapter...';
+                    showGoalProcessing(activeGoal);
+                    
+                    startStatusPolling(activeGoal.id);
+                } else {
+                    alert("Failed to submit chapters");
+                }
+            } catch (err) {
+                alert("Network error");
+            } finally {
+                document.getElementById('submit-chapters-btn').disabled = false;
+                document.getElementById('submit-chapters-btn').innerHTML = 'Confirm Chapters';
+            }
+        }
+
+        function updateNavDots() {
+            const chatBox = document.getElementById('chat-box');
+            const dotsContainer = document.getElementById('nav-dots-container');
+            dotsContainer.innerHTML = '';
+            
+            // We group by turn (user message followed by AI message)
+            const bubbles = Array.from(chatBox.querySelectorAll('.chat-bubble'));
+            let turnIndex = 0;
+
+            bubbles.forEach((bubble, idx) => {
+                // We create a dot for AI bubbles as they represent the completion of a turn
+                if (bubble.classList.contains('ai-bubble')) {
+                    const dot = document.createElement('button');
+                    dot.className = turnIndex === 0 ? 'w-2 h-2 rounded-full transition-all hover:scale-150 shadow-sm' : 'w-1.5 h-1.5 rounded-full transition-all hover:scale-150 opacity-60 hover:opacity-100';
+                    
+                    // Find the preceding user bubble to determine the turn type
+                    const userBubble = bubbles[idx - 1];
+                    
+                    // Determine color based on user bubble content or AI bubble buttons
+            if (userBubble && userBubble.classList.contains('user-bubble-quiz')) {
+                dot.classList.add('bg-green-500'); // Quiz
+            } else if (userBubble && userBubble.classList.contains('user-bubble-flashcard')) {
+                dot.classList.add('bg-purple-500'); // Flashcard
+            } else if (userBubble && userBubble.classList.contains('user-bubble-video')) {
+                dot.classList.add('bg-orange-500'); // Video
+            } else if (userBubble && userBubble.classList.contains('user-bubble-summary')) {
+                dot.classList.add('bg-gray-700'); // Summary
+            } else if (userBubble && userBubble.classList.contains('user-bubble-visual')) {
+                dot.classList.add('bg-pink-500'); // Visual
+            } else if (bubble.querySelector('button[onclick*="openQuizzesTab"]')) {
+                        dot.classList.add('bg-green-500'); // Quiz fallback
+                    } else if (bubble.querySelector('button[onclick*="openFlashcardsTab"]')) {
+                        dot.classList.add('bg-purple-500'); // Flashcard fallback
+                    } else {
+                        dot.classList.add('bg-gray-300'); // Default chat (light grey)
+                    }
+
+                    dot.onclick = () => {
+                        if (userBubble) {
+                            userBubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        } else {
+                            bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    };
+                    
+                    dotsContainer.appendChild(dot);
+                    turnIndex++;
+                }
+            });
+        }
+
+        async function showGoalContent(goal, isPolling = false) {
+            if (!isPolling) {
+                document.getElementById('processing-container').classList.add('hidden');
+                document.getElementById('pdf-container').classList.remove('hidden');
+                document.getElementById('chat-container').classList.remove('hidden');
+                document.getElementById('resizer').classList.remove('hidden');
+                document.getElementById('pdf-frame').src = `/static/pdfjs/web/viewer.html?file=${encodeURIComponent(goal.pdf_path)}`;
+                
+                const chatBox = document.getElementById('chat-box');
+                chatBox.innerHTML = '<div class="flex justify-center my-4"><i data-lucide="loader-2" class="w-5 h-5 animate-spin text-gray-400"></i></div>';
+                lucide.createIcons();
+            }
+
+            try {
+                let chatUrl = `/api/goals/${goal.id}/chat`;
+                if (window.__activeChapterTitle) {
+                    chatUrl += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(chatUrl);
+                if (res.ok) {
+                    const chatHistory = await res.json();
+                    const chatBox = document.getElementById('chat-box');
+                    const dotsContainer = document.getElementById('nav-dots-container');
+                    dotsContainer.innerHTML = '';
+                    
+                    // Only re-render entirely if it's the first load or if we are resolving a polling state
+                    let isGenerating = false;
+                    let lastMessage = chatHistory[chatHistory.length - 1];
+                    if (lastMessage && lastMessage.role === 'ai' && lastMessage.content === "") {
+                        isGenerating = true;
+                    }
+                    
+                    if (!isPolling || (isPolling && !isGenerating)) {
+                        chatBox.innerHTML = `<div class="sticky top-0 z-10 bg-white/90 backdrop-blur-md py-3 px-4 mb-4 border-b border-gray-100 shadow-sm flex flex-col items-center justify-center">
+                            <span class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Current Chapter</span>
+                            <h3 class="text-sm font-semibold text-gray-800 text-center max-w-[80%] truncate" title="${escapeHtml(window.__activeChapterTitle || goal.title)}">${escapeHtml(window.__activeChapterTitle || goal.title)}</h3>
+                        </div>`;
+                        
+                        chatHistory.forEach((msg, idx) => {
+                            const bubble = document.createElement('div');
+                            bubble.className = `chat-bubble ${msg.role === 'user' ? 'user-bubble' : 'ai-bubble'}`;
+                            
+                            if (msg.role === 'user') {
+                                if (msg.content.includes('@quiz')) bubble.classList.add('user-bubble-quiz');
+                                else if (msg.content.includes('@flashcard')) bubble.classList.add('user-bubble-flashcard');
+                                else if (msg.content.includes('@summary')) bubble.classList.add('user-bubble-summary');
+                                else if (msg.content.includes('@video') || msg.content.includes('video')) bubble.classList.add('user-bubble-video');
+                                else if (msg.content.includes('@visual')) bubble.classList.add('user-bubble-visual');
+                                else bubble.classList.add('user-bubble-default');
+                            }
+
+                    if (msg.role === 'user') {
+                        let displayContent = msg.content;
+                        if (displayContent.includes(';;;;;')) {
+                            displayContent = displayContent.split(';;;;;')[0].trim();
+                        }
+                        
+                        // Format message if it contains @ commands for better UI in chat history
+                        const commandMatch = displayContent.match(/^(\d+)@(quiz|flashcard|summary|video)\s*(.*)$/i) || displayContent.match(/^([a-z-]+)@(summary)\s*(.*)$/i) || displayContent.match(/^@(video|visual)\s*(.*)$/i);
+                        if (commandMatch) {
+                            const val = commandMatch[1] || "";
+                            const type = commandMatch[2] || commandMatch[1];
+                            const rest = commandMatch[3] || commandMatch[2] || "";
+                            let displayVal = val ? `${val}@${type}` : `@${type}`;
+
+                            // Use white text for the inner chips when the bubble is already colored
+                            const chipClass = 'bg-white/20 text-white border-white/30 rounded-md px-2 py-0.5 border text-xs font-bold';
+                            
+                            bubble.innerHTML = `
+                                <div class="flex items-center flex-wrap gap-2">
+                                    <span class="${chipClass}">
+                                        ${displayVal}
+                                    </span>
+                                    <span>${escapeHtml(rest)}</span>
+                                </div>
+                            `;
+                        } else {
+                            bubble.textContent = displayContent;
+                        }
+                    } else if (msg.role === 'ai') {
+                        if (msg.content === "" && idx === chatHistory.length - 1) {
+                            bubble.innerHTML = `
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex items-center gap-1 opacity-70">
+                                        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
+                                        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                                        <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                                    </div>
+                                    <div class="text-xs text-blue-500 font-semibold mt-1">Generating in background...</div>
+                                </div>`;
+                        } else {
+                            const parsedText = renderReferences(msg.content);
+                            bubble.innerHTML = processMathAndMarkdown(parsedText);
+                            
+                            if (msg.msg_type === 'video') {
+                                 const btn = document.createElement('button');
+                                 btn.className = "mt-3 flex items-center gap-2 px-3 py-1.5 bg-orange-50 text-orange-600 rounded-lg border border-orange-100 hover:bg-orange-100 transition-colors text-xs font-semibold";
+                                 btn.innerHTML = `<i data-lucide="video" class="w-3.5 h-3.5"></i> View Videos`;
+                                 btn.onclick = () => openVideosTab();
+                                 bubble.appendChild(btn);
+                            } else if (msg.msg_type === 'visual') {
+                                 setTimeout(() => {
+                                     let rawHtml = "";
+                                     let match = msg.content.match(/```(?:html)?\s*([\s\S]*?)```/i);
+                                     if (match) {
+                                         rawHtml = match[1].trim();
+                                     } else {
+                                         rawHtml = msg.content.trim();
+                                     }
+
+                                     const preBlock = bubble.querySelector('pre');
+                                     if (preBlock) {
+                                         const container = document.createElement('div');
+                                         container.className = 'border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px] mt-2';
+                                         container.innerHTML = `
+                                             <button class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-700 p-1.5 rounded shadow-sm z-50 transition-colors" title="Expand Visual" onclick="toggleFullscreenVisual(this)">
+                                                 <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                             </button>
+                                             <iframe class="w-full h-full" frameborder="0" sandbox="allow-scripts allow-same-origin"></iframe>
+                                         `;
+                                         preBlock.parentNode.insertBefore(container, preBlock);
+                                         preBlock.style.display = 'none';
+                                         const iframe = container.querySelector('iframe');
+                                         iframe.contentWindow.document.open();
+                                         iframe.contentWindow.document.write(rawHtml);
+                                         iframe.contentWindow.document.close();
+                                         if (window.lucide) lucide.createIcons();
+                                     } else {
+                                         bubble.innerHTML = '';
+                                         const container = document.createElement('div');
+                                         container.className = 'border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px]';
+                                         container.innerHTML = `
+                                             <button class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-700 p-1.5 rounded shadow-sm z-50 transition-colors" title="Expand Visual" onclick="toggleFullscreenVisual(this)">
+                                                 <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                             </button>
+                                             <iframe class="w-full h-full" frameborder="0" sandbox="allow-scripts allow-same-origin"></iframe>
+                                         `;
+                                         bubble.appendChild(container);
+                                         const iframe = container.querySelector('iframe');
+                                         iframe.contentWindow.document.open();
+                                         iframe.contentWindow.document.write(rawHtml);
+                                         iframe.contentWindow.document.close();
+                                         if (window.lucide) lucide.createIcons();
+                                     }
+                                 }, 0);
+                            } else if (msg.msg_type === 'quiz') {
+                                const btn = document.createElement('button');
+                                btn.className = "mt-3 flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-100 hover:bg-blue-100 transition-colors text-xs font-semibold";
+                                btn.innerHTML = `<i data-lucide="help-circle" class="w-3.5 h-3.5"></i> View Quiz`;
+                                btn.onclick = () => openQuizzesTab(msg.related_id);
+                                bubble.appendChild(btn);
+                            } else if (msg.msg_type === 'flashcard') {
+                                const btn = document.createElement('button');
+                                btn.className = "mt-3 flex items-center gap-2 px-3 py-1.5 bg-purple-50 text-purple-600 rounded-lg border border-purple-100 hover:bg-purple-100 transition-colors text-xs font-semibold";
+                                btn.innerHTML = `<i data-lucide="layers" class="w-3.5 h-3.5"></i> View Flashcards`;
+                                btn.onclick = () => openFlashcardsTab(msg.related_id);
+                                bubble.appendChild(btn);
+                            }
+                        }
+                    }
+                            chatBox.appendChild(bubble);
+                        });
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                        
+                        if (window.MathJax) {
+                            MathJax.typesetPromise([chatBox]).catch(err => console.log(err.message));
+                        }
+                        
+                        if (chatHistory.length === 0) {
+                            appendSuggestions(chatBox);
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        } else if (!isGenerating && lastMessage && lastMessage.role === 'ai') {
+                            appendSuggestions(chatBox, lastMessage.suggestions);
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                        updateNavDots();
+                    }
+
+                    const input = document.getElementById('chat-input');
+                    const submitBtn = document.querySelector('#chat-form button[type="submit"]');
+
+                    if (isGenerating) {
+                        input.disabled = true;
+                        input.placeholder = "Generating...";
+                        submitBtn.disabled = false;
+                        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        
+                        if (submitBtn) {
+                            submitBtn.innerHTML = '<div class="w-2.5 h-2.5 bg-white rounded-sm"></div>';
+                            submitBtn.classList.add('bg-gray-500', 'hover:bg-gray-600', 'is-generating');
+                        }
+
+                        if (!chatPollInterval) {
+                            chatPollInterval = setInterval(() => {
+                                if (activeGoal && activeGoal.id === goal.id) {
+                                    showGoalContent(goal, true);
+                                }
+                            }, 3000);
+                        }
+                    } else {
+                        input.disabled = false;
+                        input.placeholder = "Ask Gemminate anything...";
+                        submitBtn.disabled = false;
+                        submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-red-500', 'hover:bg-red-600', 'is-generating');
+                            submitBtn.classList.add('bg-black', 'hover:bg-gray-800');
+                            submitBtn.innerHTML = '<i data-lucide=\"arrow-up\" class=\"w-4 h-4\"></i>';
+                            lucide.createIcons();
+                        }
+
+                        if (chatPollInterval) {
+                            clearInterval(chatPollInterval);
+                            chatPollInterval = null;
+                        }
+                    }
+                }
+            } catch (err) {
+                if (!isPolling) {
+                    document.getElementById('chat-box').innerHTML = '<div class="text-red-500 text-center text-sm my-4">Failed to load chat history.</div>';
+                }
+            }
+        }
+
+        function showGoalProcessing(goal) {
+            document.getElementById('pdf-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.add('hidden');
+            document.getElementById('resizer').classList.add('hidden');
+            document.getElementById('processing-container').classList.remove('hidden');
+            document.getElementById('processing-title').textContent = `Processing: ${goal.title}`;
+            let logs = null;
+            if (goal.processing_logs) {
+                try { logs = JSON.parse(goal.processing_logs); } catch(e){}
+            }
+            updateProcessingUI(goal.status_message, logs);
+        }
+
+        function showGoalError(goal) {
+            document.getElementById('pdf-container').classList.add('hidden');
+            document.getElementById('chat-container').classList.add('hidden');
+            document.getElementById('resizer').classList.add('hidden');
+            document.getElementById('processing-container').classList.remove('hidden');
+            document.getElementById('processing-title').textContent = `Failed: ${goal.title}`;
+            document.getElementById('processing-steps').innerHTML = `
+                <div class="p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-sm">
+                    ${goal.status_message || 'An unknown error occurred during processing.'}
+                </div>
+            `;
+        }
+
+        function updateProcessingUI(message, logs = null) {
+            const steps = [
+                { id: 'toc', label: "Extracting Table of Contents" },
+                { id: 'ai_toc', label: "AI Chapter Analysis" },
+                { id: 'structure', label: "Analyzing Chapter Structures" },
+                { id: 'vision', label: "Extracting Visual Information" },
+                { id: 'embedding', label: "Generating Vector Index" },
+                { id: 'final', label: "Ready to chat!" }
+            ];
+            
+            const container = document.getElementById('processing-steps');
+            container.innerHTML = '';
+
+            // Mapping backend status messages to our UI steps
+            let currentStepIdx = -1;
+            if (message.toLowerCase().includes("toc")) currentStepIdx = 0;
+            if (message.toLowerCase().includes("ai analyzing")) currentStepIdx = 1;
+            if (message.toLowerCase().includes("analyzing chapter") || message.toLowerCase().includes("analyzing structure")) currentStepIdx = 2;
+            if (message.toLowerCase().includes("visual information") || message.toLowerCase().includes("visual details")) currentStepIdx = 3;
+            if (message.toLowerCase().includes("vector index") || message.toLowerCase().includes("embeddings") || message.toLowerCase().includes("splitting") || message.toLowerCase().includes("loading pdf") || message.toLowerCase().includes("indexing text") || message.toLowerCase().includes("concurrently")) currentStepIdx = 4;
+            if (message.toLowerCase().includes("ready")) currentStepIdx = 5;
+
+            steps.forEach((step, idx) => {
+                const isCurrent = idx === currentStepIdx;
+                const isCompleted = idx < currentStepIdx;
+                
+                const icon = isCurrent ? 'loader-2' : (isCompleted ? 'check-circle' : 'circle');
+                const color = isCurrent ? 'text-blue-600' : (isCompleted ? 'text-green-500' : 'text-gray-300');
+                const animate = isCurrent ? 'animate-spin' : '';
+                const font = isCurrent ? 'text-gray-900 font-bold' : (isCompleted ? 'text-gray-600' : 'text-gray-400');
+
+                let subtext = "";
+                if (isCurrent) {
+                    // Clean up message to avoid repeating step label
+                    const cleanMsg = message.replace(step.label, "").replace("...", "").trim();
+                    if (cleanMsg) subtext = `<div class="text-[10px] text-blue-500 font-medium ml-8 mt-0.5 animate-pulse">${cleanMsg}</div>`;
+                    
+                    // Add progress indicator for steps with counter
+                    const match = message.match(/(\d+)\/(\d+)/);
+                    if (match) {
+                        const current = parseInt(match[1]);
+                        const total = parseInt(match[2]);
+                        const percent = Math.min(100, Math.round((current / Math.max(1, total)) * 100));
+                        subtext += `
+                            <div class="ml-8 mt-2 w-full max-w-[200px]">
+                                <div class="flex justify-between text-[9px] font-bold text-blue-400 mb-1">
+                                    <span>Progress</span>
+                                    <span>${percent}%</span>
+                                </div>
+                                <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-blue-500 transition-all duration-500" style="width: ${percent}%"></div>
+                                </div>
+                                <div class="text-[8px] text-gray-400 mt-1">Approx. ${total - current} items left</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                container.innerHTML += `
+                    <div class="flex flex-col mb-4 last:mb-0">
+                        <div class="flex items-center gap-3">
+                            <div class="w-6 h-6 flex items-center justify-center">
+                                <i data-lucide="${icon}" class="w-5 h-5 ${color} ${animate}"></i>
+                            </div>
+                            <span class="text-sm ${font}">${step.label}</span>
+                            ${isCurrent ? '<span class="ml-auto text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">In Progress</span>' : ''}
+                        </div>
+                        ${subtext}
+                    </div>
+                `;
+            });
+            
+            if (logs && logs.length > 0) {
+                container.innerHTML += `
+                    <div class="mt-6 border-t cursor-border pt-4">
+                        <h4 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Live Summaries</h4>
+                        <div class="max-h-48 overflow-y-auto custom-scrollbar pr-2 space-y-3 flex flex-col-reverse">
+                            ${logs.map(log => `
+                                <div class="bg-gray-50 rounded-lg p-3 border border-gray-100 shadow-sm text-xs text-gray-600 leading-relaxed">
+                                    <div class="font-bold text-gray-800 mb-1 flex items-center gap-2">
+                                        <i data-lucide="file-text" class="w-3 h-3 text-blue-500"></i>
+                                        ${log.chapter} (Page ${log.page_number})
+                                    </div>
+                                    ${escapeHtml(log.analysis)}
+                                </div>
+                            `).reverse().join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            lucide.createIcons();
+        }
+
+        function startStatusPolling(goalId) {
+            statusPollInterval = setInterval(async () => {
+    const res = await fetch(`/api/goals/${goalId}`);
+    if (res.ok) {
+        const goal = await res.json();
+        // Update window object to store active goal id for easy access
+        if (!window.__activeGoalId || window.__activeGoalId !== goal.id) {
+            window.__activeGoalId = goal.id;
+        }
+                    
+                    // Update global goals list
+                    const idx = currentGoals.findIndex(g => g.id === goalId);
+                    if (idx !== -1) currentGoals[idx] = goal;
+                    renderGoals();
+
+                    if (activeGoal && activeGoal.id === goalId) {
+                        // Check if any chapters are still loading
+                        let hasLoadingChapters = false;
+                        try {
+                            if (goal.chapters_data) {
+                                const chapters = JSON.parse(goal.chapters_data);
+                                hasLoadingChapters = chapters.some(c => c.selected && c.status === 'loading');
+                            }
+                        } catch(e){}
+
+                        if (goal.status === 'completed') {
+                            if (!hasLoadingChapters) {
+                                clearInterval(statusPollInterval);
+                            }
+                            
+                            // If we just transitioned to completed or we are updating the tree
+                            if (document.getElementById('processing-container').classList.contains('hidden') === false) {
+                                showGoalContent(goal);
+                                document.getElementById('goals-section').classList.add('hidden');
+                                document.getElementById('chapter-tree-section').classList.remove('hidden');
+                            }
+                            // Always update tree while loading
+                            renderChapterTree(goal);
+                        } else if (goal.status === 'waiting_for_chapters') {
+                            // Automatically show chapter selection when AI analysis is done
+                            if (document.getElementById('chapter-selection-container').classList.contains('hidden')) {
+                                showChapterSelection(goal);
+                            }
+                        } else if (goal.status === 'failed') {
+                            clearInterval(statusPollInterval);
+                            showGoalError(goal);
+                        } else {
+                            let logs = null;
+                            if (goal.processing_logs) {
+                                try { logs = JSON.parse(goal.processing_logs); } catch(e){}
+                            }
+                            updateProcessingUI(goal.status_message, logs);
+                        }
+                    }
+                }
+            }, 2000);
+        }
+
+        function saveMessage(role, content, goalId) {
+            // Migrated to backend. Handled automatically now.
+        }
+
+        function updateLastMessage(content, goalId) {
+            // Migrated to backend. Frontend renders streaming content dynamically.
+        }
+
+        function handleFileSelect(input) {
+            const file = input.files[0];
+            if (file) {
+                if (file.size > 50 * 1024 * 1024) {
+                    alert('File too large. Max 50MB.');
+                    input.value = '';
+                    document.getElementById('file-name').textContent = 'Click or drag PDF here';
+                } else {
+                    document.getElementById('file-name').textContent = file.name;
+                    document.getElementById('file-name').classList.add('text-blue-400');
+                }
+            }
+        }
+
+        document.getElementById('new-goal-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const form = e.target;
+            const btn = document.getElementById('submit-goal');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader-2" class="w-5 h-5 animate-spin"></i> Processing...';
+            lucide.createIcons();
+
+            const formData = new FormData(form);
+            try {
+                const res = await fetch('/api/goals', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (res.ok) {
+                    const newGoal = await res.json();
+                    hideNewGoalModal();
+                    await loadGoals();
+                    selectGoal(newGoal);
+                    form.reset();
+                    document.getElementById('file-name').textContent = 'Click or drag PDF here';
+                    document.getElementById('file-name').classList.remove('text-blue-400');
+                } else {
+                    const data = await res.json();
+                    alert(data.detail || 'Failed to create goal');
+                }
+            } catch (err) {
+                alert('Network error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span>Initialize Learning Plan</span>';
+                lucide.createIcons();
+            }
+        });
+
+        document.getElementById('chat-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            if (submitBtn.classList.contains('is-generating')) {
+                stopGeneration();
+                return;
+            }
+            let message = input.value.trim();
+            
+            let isGeneratingQuiz = false;
+            let actionPrefix = "";
+            let itemCount = 0;
+            let actionType = null;
+            let currentImage = window.__currentVisualImage; // Save before removeActionChip clears it
+
+            if (currentActionType) {
+                actionType = currentActionType;
+                if (actionType === 'summary') {
+                    const sType = document.getElementById('summary-type').value;
+                    actionPrefix = `${sType}@summary `;
+                    isGeneratingQuiz = false; // Summaries should be classic chat
+                }
+                else if (actionType === 'video' || actionType === 'visual') {
+                    actionPrefix = `@${actionType} `;
+                    isGeneratingQuiz = false; 
+                }
+                else {
+                    itemCount = Math.min(20, Math.max(1, document.getElementById('chip-number').value || 3));
+                    actionPrefix = `${itemCount}@${actionType} `;
+                    isGeneratingQuiz = true;
+                }
+                message = actionPrefix + message;
+                removeActionChip(); // reset for next message
+            } else {
+                // Check if user manually typed it anywhere in the message
+                const match = message.match(/(?:(\d+)@)?(quiz|flashcard|video|visual)\b/i);
+                if (match) {
+                    actionType = match[2].toLowerCase();
+                    if (actionType === 'video' || actionType === 'visual') {
+                        isGeneratingQuiz = false; 
+                    } else {
+                        isGeneratingQuiz = true;
+                        itemCount = match[1] ? Math.min(20, parseInt(match[1])) : 3;
+                        if (match[1]) {
+                            message = message.replace(/(?:\d+@)?(quiz|flashcard)/i, `${itemCount}@$2`);
+                        } else {
+                            message = `${itemCount}@${actionType} ` + message;
+                        }
+                    }
+                } else {
+                    const summaryMatch = message.match(/(?:([a-z-]+)@)?summary\b/i);
+                    if (summaryMatch) {
+                        isGeneratingQuiz = false;
+                        actionType = 'summary';
+                        // Keep message as is, the LLM will see "type@summary"
+                    }
+                }
+            }
+
+            if (!message || !activeGoal) return;
+
+            if (actionType === 'visual' && !currentImage) {
+                alert("Please add an image to generate a visual.");
+                document.getElementById('chat-input').disabled = false;
+                document.getElementById('chat-input').focus();
+                return;
+            }
+
+            if ((actionType === 'video' || actionType === 'quiz' || actionType === 'flashcard' || actionType === 'summary') && message.trim().match(/^(\d+)?@(video|quiz|flashcard|summary)$/i)) {
+                // Use the stored active chapter title
+                if (window.__activeChapterTitle) {
+                    message += ' ' + window.__activeChapterTitle;
+                }
+            }
+
+            // Fallback for general search/question if only whitespace or empty, use chapter title
+            if (!message.trim() && window.__activeChapterTitle) {
+                message = window.__activeChapterTitle;
+            }
+            
+            if (window.__chatHiddenContext) {
+                message += ` ;;;;; ${window.__chatHiddenContext}`;
+                window.__chatHiddenContext = "";
+            }
+
+            const allExistingSuggestions = document.querySelectorAll('#chat-suggestions');
+            allExistingSuggestions.forEach(el => el.remove());
+
+            // Disable input and button while chat is running
+            input.disabled = true;
+            submitBtn.innerHTML = '<div class="w-2.5 h-2.5 bg-white rounded-sm"></div>';
+            submitBtn.classList.remove('bg-black', 'hover:bg-gray-800');
+            submitBtn.classList.add('bg-gray-500', 'hover:bg-gray-600', 'is-generating');
+            lucide.createIcons();
+
+            const currentGoalId = activeGoal.id;
+            const chatBox = document.getElementById('chat-box');
+
+            
+
+            abortController = new AbortController();
+            const userMsg = document.createElement('div');
+            userMsg.className = 'chat-bubble user-bubble';
+            
+            if (message.includes('@quiz')) userMsg.classList.add('user-bubble-quiz');
+            else if (message.includes('@flashcard')) userMsg.classList.add('user-bubble-flashcard');
+            else if (message.includes('@summary')) userMsg.classList.add('user-bubble-summary');
+            else if (message.includes('@video') || message.includes('video')) userMsg.classList.add('user-bubble-video');
+            else if (message.includes('@visual')) userMsg.classList.add('user-bubble-visual');
+            else userMsg.classList.add('user-bubble-default');
+
+            let displayMessage = message;
+            if (displayMessage.includes(';;;;;')) {
+                displayMessage = displayMessage.split(';;;;;')[0].trim();
+            }
+
+            // Format message if it contains @ commands for better UI in chat history
+            const commandMatch = displayMessage.match(/^(\d+)@(quiz|flashcard|summary|video)\s*(.*)$/i) || displayMessage.match(/^([a-z-]+)@(summary)\s*(.*)$/i) || displayMessage.match(/^@(video|visual)\s*(.*)$/i);
+            if (commandMatch) {
+                const val = commandMatch[1] || "";
+                const type = commandMatch[2] || commandMatch[1];
+                const rest = commandMatch[3] || commandMatch[2] || "";
+                let displayVal = val ? `${val}@${type}` : `@${type}`;
+
+                // Use white text for the inner chips when the bubble is already colored
+                const chipClass = 'bg-white/20 text-white border-white/30 rounded-md px-2 py-0.5 border text-xs font-bold';
+                
+                userMsg.innerHTML = `
+                    <div class="flex items-center flex-wrap gap-2">
+                        <span class="${chipClass}">
+                            ${displayVal}
+                        </span>
+                        <span>${escapeHtml(rest)}</span>
+                    </div>
+                `;
+            } else {
+                userMsg.textContent = displayMessage;
+            }
+            
+            chatBox.appendChild(userMsg);
+            
+            saveMessage('user', message, currentGoalId);
+            input.value = '';
+            
+            // Push the user's input to the top of the chat box
+            userMsg.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            const newBubble = document.createElement('div');
+            newBubble.className = 'chat-bubble ai-bubble';
+            newBubble.innerHTML = `
+                <div class="flex items-center gap-1 opacity-70">
+                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                    <div class="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                </div>`;
+            chatBox.appendChild(newBubble);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Initial AI message placeholder in history
+            saveMessage('ai', '...', currentGoalId);
+
+            try {
+                const formData = new FormData();
+                formData.append('message', message);
+                formData.append('goal_id', currentGoalId);
+                if (window.__activeChapterTitle) {
+                    formData.append('chapter_title', window.__activeChapterTitle);
+                }
+                if (actionType === 'visual' && currentImage) {
+                    formData.append('image_data', currentImage);
+                }
+                
+                // Allow input to be used immediately
+                // Do not disable input
+
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    body: formData,
+                    signal: abortController.signal
+                });
+                
+                if (!res.ok) {
+                    let errorMsg = "Error generating response.";
+                    try {
+                        const data = await res.json();
+                        if (data.detail) errorMsg = data.detail;
+                    } catch (e) {}
+                    const errHtml = `<span class="text-red-500">Error: ${errorMsg}</span>`;
+                    newBubble.innerHTML = errHtml;
+                    updateLastMessage(errHtml, currentGoalId);
+                    
+                    // Re-enable on error
+                    input.disabled = false;
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    input.focus();
+                    return;
+                }
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder('utf-8');
+                let fullText = "";
+                let isFirstChunk = true;
+
+
+                let quizContainerId = "quiz-" + Date.now();
+                
+                if (isGeneratingQuiz) {
+                    // Show canvas, hide chat
+                    const canvas = document.getElementById('fixed-canvas');
+                    const canvasContent = document.getElementById('canvas-content');
+                    document.getElementById('canvas-title').textContent = actionType === 'quiz' ? 'Quiz Generator' : 'Flashcards Generator';
+                    canvas.classList.remove('hidden');
+                    
+                    // Put the progress UI in the canvas instead of chat bubble
+                    newBubble.innerHTML = `<span class="text-gray-500 italic text-sm">Generating ${itemCount} ${actionType}(s)... Check the canvas.</span>`;
+                    
+                    canvasContent.innerHTML = `
+                        <div class="generation-progress-container">
+                            <div class="text-sm font-semibold text-blue-800">Generating ${itemCount} ${actionType}(s)...</div>
+                            <div class="text-xs text-blue-600 mt-1" id="${quizContainerId}-text">0 items generated</div>
+                            <div class="generation-progress-bar-bg">
+                                <div class="generation-progress-bar-fill" id="${quizContainerId}-bar"></div>
+                            </div>
+                        </div>
+                        <div id="${quizContainerId}-render"></div>
+                    `;
+                }
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    fullText += chunk;
+                    
+                    if (isFirstChunk && !isGeneratingQuiz) {
+                        newBubble.innerHTML = "";
+                        isFirstChunk = false;
+                    }
+
+                    // Check if this is the end of suggestions JSON from the backend
+                    // Note: The backend will only include suggestions in the final content update, not the stream.
+                    // But if it did stream, we'd need to handle it. 
+                    // Let's stick to the current logic: stream text, then fetch final message for suggestions.
+                    
+                    let parsedText = renderReferences(fullText);
+                    const currentHtml = processMathAndMarkdown(parsedText);
+                    
+                    // Simple logic to parse quiz out of generated text to show progress
+                    if (isGeneratingQuiz && activeGoal && activeGoal.id === currentGoalId) {
+                        const questionMatches = fullText.match(/\b\d+[\.\)]\s*(.*?)(?=\n|$)/g);
+                        const count = questionMatches ? questionMatches.length : 0;
+                        const progressText = document.getElementById(`${quizContainerId}-text`);
+                        const progressBar = document.getElementById(`${quizContainerId}-bar`);
+                        if (progressText && progressBar) {
+                            progressText.innerText = `${Math.min(count, itemCount)} of ${itemCount} items generated...`;
+                            progressBar.style.width = Math.min(100, (count / Math.max(1, itemCount)) * 100) + '%';
+                        }
+                    } else if (activeGoal && activeGoal.id === currentGoalId) {
+                        newBubble.innerHTML = currentHtml;
+                        chatBox.scrollTop = chatBox.scrollHeight;
+                    }
+                    
+                    updateLastMessage(currentHtml, currentGoalId);
+                }
+                
+                let finalParsedText = renderReferences(fullText);
+                const finalHtml = processMathAndMarkdown(finalParsedText);
+                
+                if (activeGoal && activeGoal.id === currentGoalId) {
+                    if (isGeneratingQuiz) {
+                        document.getElementById(`${quizContainerId}-text`).innerText = `Generation Complete!`;
+                        document.getElementById(`${quizContainerId}-bar`).style.width = '100%';
+                        setTimeout(() => {
+                            document.getElementById(`${quizContainerId}-text`).innerText = `Saving...`;
+                            // Wait a moment for backend to save, then load the tab unconditionally
+                            // Increased delay to ensure backend has finished saving
+                            setTimeout(() => {
+                                if (actionType === 'quiz') openQuizzesTab(true);
+                                else if (actionType === 'flashcard') openFlashcardsTab(true);
+                            }, 2000);
+                        }, 500);
+                    } else {
+                        newBubble.innerHTML = finalHtml;
+                        if (window.MathJax) {
+                            MathJax.typesetPromise([newBubble]).catch((err) => console.log(err.message));
+                        }
+                        
+                        if (actionType === 'visual') {
+                            let rawHtml = "";
+                            let match = fullText.match(/```(?:html)?\s*([\s\S]*?)```/i);
+                            if (match) {
+                                rawHtml = match[1].trim();
+                            } else {
+                                rawHtml = fullText.trim();
+                            }
+
+                            const preBlock = newBubble.querySelector('pre');
+                            if (preBlock) {
+                                const container = document.createElement('div');
+                                container.className = 'border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px] mt-2';
+                                container.innerHTML = `
+                                    <button class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-700 p-1.5 rounded shadow-sm z-50 transition-colors" title="Expand Visual" onclick="toggleFullscreenVisual(this)">
+                                        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                    </button>
+                                    <iframe class="w-full h-full" frameborder="0" sandbox="allow-scripts allow-same-origin"></iframe>
+                                `;
+                                preBlock.parentNode.insertBefore(container, preBlock);
+                                preBlock.style.display = 'none';
+                                const iframe = container.querySelector('iframe');
+                                iframe.contentWindow.document.open();
+                                iframe.contentWindow.document.write(rawHtml);
+                                iframe.contentWindow.document.close();
+                                if (window.lucide) lucide.createIcons();
+                            } else {
+                                newBubble.innerHTML = '';
+                                const container = document.createElement('div');
+                                container.className = 'border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px]';
+                                container.innerHTML = `
+                                    <button class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-700 p-1.5 rounded shadow-sm z-50 transition-colors" title="Expand Visual" onclick="toggleFullscreenVisual(this)">
+                                        <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                    </button>
+                                    <iframe class="w-full h-full" frameborder="0" sandbox="allow-scripts allow-same-origin"></iframe>
+                                `;
+                                newBubble.appendChild(container);
+                                const iframe = container.querySelector('iframe');
+                                iframe.contentWindow.document.open();
+                                iframe.contentWindow.document.write(rawHtml);
+                                iframe.contentWindow.document.close();
+                                if (window.lucide) lucide.createIcons();
+                            }
+                        }
+                    }
+                    
+                    // After streaming, the DB should have the suggestions saved in the message
+                    // We fetch them once more to ensure we display the saved ones
+                    setTimeout(async () => {
+                        if (actionType === 'visual') {
+                            // We don't need to refresh the whole chat anymore since it streams code properly
+                            // Let's just update suggestions
+                            const res = await fetch(`/api/goals/${currentGoalId}/chat`);
+                            if (res.ok) {
+                                const history = await res.json();
+                                const last = history[history.length - 1];
+                                if (last && last.role === 'ai') {
+                                    appendSuggestions(chatBox, last.suggestions);
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                    updateNavDots();
+                                }
+                            }
+                        } else {
+                            const res = await fetch(`/api/goals/${currentGoalId}/chat`);
+                            if (res.ok) {
+                                const history = await res.json();
+                                const last = history[history.length - 1];
+                                if (last && last.role === 'ai') {
+                                    appendSuggestions(chatBox, last.suggestions);
+                                    chatBox.scrollTop = chatBox.scrollHeight;
+                                    updateNavDots();
+                                }
+                            }
+                        }
+                    }, 1000);
+                }
+                
+                updateLastMessage(finalHtml, currentGoalId);
+                
+            } catch (err) {
+                const errHtml = `<span class="text-red-500">Network error.</span>`;
+                newBubble.innerHTML = errHtml;
+                updateLastMessage(errHtml, currentGoalId);
+            } finally {
+                // Re-enable input and button after finishing
+                input.disabled = false;
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-red-500', 'hover:bg-red-600', 'is-generating');
+                            submitBtn.classList.add('bg-black', 'hover:bg-gray-800');
+                            submitBtn.innerHTML = '<i data-lucide=\"arrow-up\" class=\"w-4 h-4\"></i>';
+                            lucide.createIcons();
+                        }
+                input.focus();
+                abortController = null;
+            }
+        });
+
+        function highlightInPdf(quote) {
+            const iframe = document.getElementById('pdf-frame');
+            if (!iframe || !iframe.contentWindow || !iframe.contentWindow.PDFViewerApplication) {
+                console.error("PDF Viewer not ready");
+                return;
+            }
+
+            const app = iframe.contentWindow.PDFViewerApplication;
+            if (app.eventBus) {
+                app.eventBus.dispatch('find', {
+                    source: window,
+                    type: '',
+                    query: quote,
+                    phraseSearch: true,
+                    caseSensitive: false,
+                    entireWord: false,
+                    highlightAll: true,
+                    findPrevious: false
+                });
+            }
+        }
+
+        function goToPage(pageNum, topicsData = null) {
+            const iframe = document.getElementById('pdf-frame');
+            if (!iframe || !iframe.contentWindow || !iframe.contentWindow.PDFViewerApplication) {
+                console.error("PDF Viewer not ready");
+                return;
+            }
+            const app = iframe.contentWindow.PDFViewerApplication;
+            app.page = parseInt(pageNum);
+            
+            let topicsToHighlight = null;
+            if (topicsData) {
+                try {
+                    topicsToHighlight = JSON.parse(decodeURIComponent(topicsData));
+                } catch(e) {}
+            }
+            
+            const doc = iframe.contentDocument;
+            if (doc && !doc.getElementById('custom-underline-style')) {
+                const style = doc.createElement('style');
+                style.id = 'custom-underline-style';
+                style.textContent = `
+                    .textLayer .highlight {
+                        background-color: transparent !important;
+                        border-bottom: 2px solid blue !important;
+                        border-radius: 0 !important;
+                    }
+                    .textLayer .highlight.selected {
+                        background-color: rgba(0, 0, 255, 0.1) !important;
+                    }
+                `;
+                doc.head.appendChild(style);
+            }
+
+            if (topicsToHighlight && topicsToHighlight.length > 0) {
+                if (app.eventBus) {
+                    app.eventBus.dispatch('find', {
+                        source: window,
+                        type: '',
+                        query: topicsToHighlight,
+                        phraseSearch: true,
+                        caseSensitive: false,
+                        entireWord: false,
+                        highlightAll: true,
+                        findPrevious: false
+                    });
+                }
+            } else {
+                if (app.eventBus) {
+                    app.eventBus.dispatch('find', {
+                        source: window,
+                        type: '',
+                        query: '',
+                        phraseSearch: true,
+                        caseSensitive: false,
+                        entireWord: false,
+                        highlightAll: true,
+                        findPrevious: false
+                    });
+                }
+            }
+        }
+
+        let currentActionType = null;
+
+        async function appendSuggestions(chatBox, preloadedSuggestions = null) {
+            // Remove ANY and ALL existing suggestions containers to prevent duplication
+            const allExisting = document.querySelectorAll('#chat-suggestions');
+            allExisting.forEach(el => el.remove());
+
+        const suggestionsDiv = document.createElement('div');
+        suggestionsDiv.id = 'chat-suggestions';
+        suggestionsDiv.className = 'flex flex-col gap-2 mt-4 mb-4 w-full';
+        
+        let suggestions = [];
+
+        if (preloadedSuggestions) {
+            try {
+                const texts = typeof preloadedSuggestions === 'string' ? JSON.parse(preloadedSuggestions) : preloadedSuggestions;
+                suggestions = texts.map(t => ({ text: t, defaultSend: t }));
+            } catch (e) {
+                console.error("Failed to parse preloaded suggestions", e);
+            }
+        }
+
+        if (suggestions.length === 0) {
+            // Only refresh suggestions from the server if no preloaded suggestions are available
+            suggestionsDiv.innerHTML = `
+                <div class="flex flex-col gap-2 animate-pulse">
+                    <div class="h-12 bg-gray-100 rounded-xl w-full"></div>
+                    <div class="h-12 bg-gray-100 rounded-xl w-full"></div>
+                    <div class="h-12 bg-gray-100 rounded-xl w-full"></div>
+                    <div class="h-12 bg-gray-100 rounded-xl w-full"></div>
+                </div>
+            `;
+            chatBox.appendChild(suggestionsDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            try {
+                const formData = new FormData();
+                formData.append('goal_id', activeGoal.id);
+                const res = await fetch('/api/suggestions', {
+                    method: 'POST',
+                    body: formData
+                });
+                if (res.ok) {
+                    const texts = await res.json();
+                    suggestions = texts.map(t => ({ text: t, defaultSend: t }));
+                }
+            } catch (e) {
+                console.error("Failed to fetch suggestions", e);
+            }
+        }
+
+        if (suggestions.length === 0) {
+            suggestions = [
+                { text: "What are the main concepts discussed in this document?", defaultSend: "What are the main concepts discussed in this document?" },
+                { text: "3@quiz Generate quizzes based on the key topics", defaultSend: "3@quiz Generate quizzes based on the key topics" },
+                { text: "5@flashcard Generate flashcards for the important terms", defaultSend: "5@flashcard Generate flashcards for the important terms" },
+                { text: "@video Find a video explaining the core concepts", defaultSend: "@video Find a video explaining the core concepts" }
+            ];
+        }
+
+            suggestionsDiv.innerHTML = '';
+            suggestionsDiv.classList.remove('animate-pulse');
+
+            suggestions.forEach(s => {
+                const row = document.createElement('div');
+                row.className = "flex items-center justify-between bg-white border border-gray-200 rounded-xl px-4 py-3 cursor-pointer hover:bg-gray-50 hover:border-blue-300 transition-all shadow-sm group";
+                
+                const textSpan = document.createElement('span');
+                textSpan.className = "text-sm text-gray-700 flex-1 flex items-center";
+                let displayText = s.text;
+                let badgeHtml = '';
+                const matchCommand = s.text.match(/^(\d+)?@(quiz|flashcard|video|summary)\s*(.*)$/i);
+                if (matchCommand) {
+                    const num = matchCommand[1] || '';
+                    const cmd = matchCommand[2].toLowerCase();
+                    const rest = matchCommand[3];
+                    let badgeColor = 'bg-gray-100 text-gray-700';
+                    if (cmd === 'video') badgeColor = 'bg-orange-100 text-orange-700 border border-orange-200';
+                    else if (cmd === 'quiz') badgeColor = 'bg-blue-100 text-blue-700 border border-blue-200';
+                    else if (cmd === 'flashcard') badgeColor = 'bg-purple-100 text-purple-700 border border-purple-200';
+                    else if (cmd === 'summary') badgeColor = 'bg-green-100 text-green-700 border border-green-200';
+                    
+                    badgeHtml = `<span class="px-2 py-0.5 rounded-md text-xs font-bold ${badgeColor} mr-2">${num ? num + '@' : '@'}${cmd}</span>`;
+                    displayText = rest;
+                }
+                textSpan.innerHTML = badgeHtml + `<span>${escapeHtml(displayText)}</span>`;
+                textSpan.onclick = () => {
+                    const input = document.getElementById('chat-input');
+                    // Clear anything in the chat before putting the clicked option
+                    input.value = '';
+                    removeActionChip();
+
+            // Check if it's a command to show the chip UI
+            const match = s.text.match(/^(\d+)?@(quiz|flashcard|video|summary)\s*(.*)$/i);
+            if (match) {
+                insertPrompt('@' + match[2].toLowerCase());
+                        if (match[1]) {
+                            document.getElementById('chip-number').value = match[1];
+                        }
+                        input.value = match[3];
+                    } else {
+                        input.value = s.text;
+                    }
+                    input.focus();
+                };
+
+                const btn = document.createElement('button');
+                btn.type = "button";
+                btn.className = "ml-3 p-1.5 rounded-full bg-gray-50 border border-gray-200 text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition-colors flex-shrink-0";
+                btn.innerHTML = '<i data-lucide="arrow-up-right" class="w-4 h-4 pointer-events-none"></i>';
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    const input = document.getElementById('chat-input');
+                    // Clear anything in the chat before sending
+                    input.value = '';
+                    removeActionChip();
+                    
+                    input.value = s.defaultSend;
+                    document.querySelector('#chat-form button[type="submit"]').click();
+                };
+
+                row.appendChild(textSpan);
+                row.appendChild(btn);
+                suggestionsDiv.appendChild(row);
+            });
+
+            chatBox.appendChild(suggestionsDiv);
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        }
+
+        let lastSelectedText = "";
+        function showHighlightTooltip(text, top, left) {
+            lastSelectedText = text;
+            const tooltip = document.getElementById('highlight-tooltip');
+            tooltip.classList.remove('hidden');
+            
+            // Wait for render to get height
+            setTimeout(() => {
+                const tooltipHeight = tooltip.offsetHeight;
+                const tooltipWidth = tooltip.offsetWidth;
+                
+                let finalTop = top - tooltipHeight - 10;
+                let finalLeft = left - (tooltipWidth / 2);
+                
+                // Bounds checking
+                if (finalTop < 10) finalTop = top + 20;
+                if (finalLeft < 10) finalLeft = 10;
+                if (finalLeft + tooltipWidth > window.innerWidth - 10) {
+                    finalLeft = window.innerWidth - tooltipWidth - 10;
+                }
+                
+                tooltip.style.top = finalTop + 'px';
+                tooltip.style.left = finalLeft + 'px';
+                tooltip.classList.remove('scale-95', 'opacity-0');
+                tooltip.classList.add('scale-100', 'opacity-100');
+            }, 0);
+            lucide.createIcons();
+        }
+
+        function hideHighlightTooltip() {
+            const tooltip = document.getElementById('highlight-tooltip');
+            tooltip.classList.remove('scale-100', 'opacity-100');
+            tooltip.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                if (tooltip.classList.contains('opacity-0')) {
+                    tooltip.classList.add('hidden');
+                }
+            }, 200);
+        }
+
+        function handleHighlightAction(action) {
+            const input = document.getElementById('chat-input');
+            input.value = '';
+            removeActionChip();
+            
+            if (action === 'ask') {
+                input.value = `I want to better understand: ${lastSelectedText}`;
+            } else if (action === 'quiz') {
+                insertPrompt('@quiz');
+                input.value = lastSelectedText;
+            } else if (action === 'flashcard') {
+                insertPrompt('@flashcard');
+                input.value = lastSelectedText;
+            } else if (action === 'video') {
+                insertPrompt('@video');
+                input.value = lastSelectedText;
+            } else if (action === 'summary') {
+                insertPrompt('@summary');
+                input.value = lastSelectedText;
+            }
+            
+            hideHighlightTooltip();
+            input.focus();
+            // Clear selection in iframe
+            const iframe = document.getElementById('pdf-frame');
+            if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.getSelection().removeAllRanges();
+            }
+        }
+
+        document.getElementById('pdf-frame').onload = function() {
+            const iframe = this;
+            const monitorSelection = () => {
+                try {
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    
+                    // Add hover effect for visuals
+                    const style = iframeDoc.createElement('style');
+                    style.textContent = `
+                        .pdf-visual-hover {
+                            outline: 2px dashed #ec4899 !important;
+                            cursor: pointer !important;
+                            background-color: rgba(236, 72, 153, 0.1) !important;
+                        }
+                    `;
+                    iframeDoc.head.appendChild(style);
+
+                    // Crop mode logic
+                    let isCropMode = false;
+                    let isDragging = false;
+                    let startX, startY;
+                    let cropBox = null;
+
+                    window.togglePdfCropMode = function() {
+                        isCropMode = !isCropMode;
+                        const btn = document.getElementById('pdf-crop-btn');
+                        if (isCropMode) {
+                            btn.classList.add('bg-blue-50', 'text-blue-600', 'border-blue-200');
+                            iframeDoc.body.style.cursor = 'crosshair';
+                        } else {
+                            btn.classList.remove('bg-blue-50', 'text-blue-600', 'border-blue-200');
+                            iframeDoc.body.style.cursor = 'default';
+                            if (cropBox) {
+                                cropBox.remove();
+                                cropBox = null;
+                            }
+                        }
+                    };
+
+                    iframeDoc.addEventListener('mousedown', function(e) {
+                        if (isCropMode) {
+                            isDragging = true;
+                            startX = e.pageX;
+                            startY = e.pageY;
+                            
+                            if (cropBox) cropBox.remove();
+                            cropBox = iframeDoc.createElement('div');
+                            cropBox.style.position = 'absolute';
+                            cropBox.style.border = '2px dashed #3b82f6';
+                            cropBox.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+                            cropBox.style.left = startX + 'px';
+                            cropBox.style.top = startY + 'px';
+                            cropBox.style.width = '0px';
+                            cropBox.style.height = '0px';
+                            cropBox.style.zIndex = '9999';
+                            iframeDoc.body.appendChild(cropBox);
+                        } else {
+                            hideHighlightTooltip();
+                        }
+                    });
+
+                    iframeDoc.addEventListener('mousemove', function(e) {
+                        if (isCropMode && isDragging && cropBox) {
+                            const currentX = e.pageX;
+                            const currentY = e.pageY;
+                            
+                            const width = Math.abs(currentX - startX);
+                            const height = Math.abs(currentY - startY);
+                            
+                            cropBox.style.width = width + 'px';
+                            cropBox.style.height = height + 'px';
+                            cropBox.style.left = Math.min(startX, currentX) + 'px';
+                            cropBox.style.top = Math.min(startY, currentY) + 'px';
+                        } else if (!isCropMode) {
+                            // Find images/visuals
+                            const els = iframeDoc.elementsFromPoint(e.clientX, e.clientY);
+                            const img = els.find(el => el.tagName === 'IMG' || el.tagName === 'CANVAS' || el.tagName === 'SVG' || el.classList.contains('canvasWrapper'));
+                            
+                            // Clear old hovers
+                            iframeDoc.querySelectorAll('.pdf-visual-hover').forEach(el => el.classList.remove('pdf-visual-hover'));
+                            
+                            if (img) {
+                                img.classList.add('pdf-visual-hover');
+                                img.onclick = (evt) => {
+                                    evt.preventDefault();
+                                    evt.stopPropagation();
+                                    insertPrompt('@visual');
+                                    // Extract image data
+                                    let imageData = '';
+                                    if (img.tagName === 'IMG') {
+                                        imageData = img.src;
+                                    } else if (img.tagName === 'CANVAS') {
+                                        imageData = img.toDataURL('image/png');
+                                    }
+                                    window.__currentVisualImage = imageData;
+                                    // Let the user add additional information before hitting enter
+                                    const input = document.getElementById('chat-input');
+                                    if (input) input.focus();
+                                };
+                            }
+                        }
+                    });
+
+                    iframeDoc.addEventListener('mouseup', function(e) {
+                        if (isCropMode && isDragging) {
+                            isDragging = false;
+                            if (cropBox && parseInt(cropBox.style.width) > 10 && parseInt(cropBox.style.height) > 10) {
+                                const rect = cropBox.getBoundingClientRect();
+                                const canvases = Array.from(iframeDoc.querySelectorAll('canvas'));
+                                
+                                const centerX = rect.left + rect.width / 2;
+                                const centerY = rect.top + rect.height / 2;
+                                
+                                let targetCanvas = null;
+                                for (const canvas of canvases) {
+                                    const canvasRect = canvas.getBoundingClientRect();
+                                    if (centerX >= canvasRect.left && centerX <= canvasRect.right &&
+                                        centerY >= canvasRect.top && centerY <= canvasRect.bottom) {
+                                        targetCanvas = canvas;
+                                        break;
+                                    }
+                                }
+                                
+                                if (targetCanvas) {
+                                    const canvasRect = targetCanvas.getBoundingClientRect();
+                                    const relX = rect.left - canvasRect.left;
+                                    const relY = rect.top - canvasRect.top;
+                                    
+                                    const scaleX = targetCanvas.width / canvasRect.width;
+                                    const scaleY = targetCanvas.height / canvasRect.height;
+                                    
+                                    const cropCanvas = document.createElement('canvas');
+                                    cropCanvas.width = rect.width * scaleX;
+                                    cropCanvas.height = rect.height * scaleY;
+                                    
+                                    const ctx = cropCanvas.getContext('2d');
+                                    ctx.drawImage(
+                                        targetCanvas, 
+                                        relX * scaleX, relY * scaleY, rect.width * scaleX, rect.height * scaleY,
+                                        0, 0, cropCanvas.width, cropCanvas.height
+                                    );
+                                    
+                                    const imageData = cropCanvas.toDataURL('image/png');
+                                    window.__currentVisualImage = imageData;
+                                    
+                                    const oldBtn = iframeDoc.getElementById('visual-crop-btn');
+                                    if (oldBtn) oldBtn.remove();
+                                    
+                                    const btn = iframeDoc.createElement('button');
+                                    btn.id = 'visual-crop-btn';
+                                    btn.innerHTML = 'Generate Visual';
+                                    btn.style.position = 'absolute';
+                                    btn.style.top = (rect.bottom + 5) + 'px';
+                                    btn.style.left = rect.left + 'px';
+                                    btn.style.zIndex = '10000';
+                                    btn.style.padding = '6px 12px';
+                                    btn.style.backgroundColor = '#ec4899';
+                                    btn.style.color = 'white';
+                                    btn.style.border = 'none';
+                                    btn.style.borderRadius = '4px';
+                                    btn.style.cursor = 'pointer';
+                                    btn.style.fontSize = '12px';
+                                    btn.style.fontWeight = 'bold';
+                                    btn.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                                    
+                                    btn.onclick = function(e) {
+                                        e.stopPropagation();
+                                        insertPrompt('@visual');
+                                        window.togglePdfCropMode();
+                                        btn.remove();
+                                        const input = document.getElementById('chat-input');
+                                        if (input) input.focus();
+                                    };
+                                    
+                                    iframeDoc.body.appendChild(btn);
+                                } else {
+                                    window.togglePdfCropMode();
+                                }
+                            } else {
+                                window.togglePdfCropMode();
+                            }
+                        } else if (!isCropMode) {
+                            setTimeout(() => {
+                                const selection = iframe.contentWindow.getSelection();
+                                const selectedText = selection.toString().trim();
+                                if (selectedText.length > 0) {
+                                    const range = selection.getRangeAt(0);
+                                    const rect = range.getBoundingClientRect();
+                                    const iframeRect = iframe.getBoundingClientRect();
+                                    
+                                    showHighlightTooltip(
+                                        selectedText, 
+                                        rect.top + iframeRect.top, 
+                                        rect.left + iframeRect.left + (rect.width / 2)
+                                    );
+                                } else {
+                                    hideHighlightTooltip();
+                                }
+                            }, 10);
+                        }
+                    });
+                } catch (e) {
+                    console.error("Could not attach selection listener to PDF iframe", e);
+                }
+            };
+            monitorSelection();
+        };
+
+        function handleVisualUpload(input) {
+            const file = input.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    window.__currentVisualImage = e.target.result;
+                    const btn = document.getElementById('visual-upload-btn');
+                    if (btn) {
+                        btn.classList.add('text-green-500');
+                        btn.classList.remove('text-pink-500');
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function insertPrompt(promptText) {
+            const chip = document.getElementById('action-chip');
+            const label = document.getElementById('chip-label');
+            const num = document.getElementById('chip-number');
+            const summaryType = document.getElementById('summary-type');
+            const input = document.getElementById('chat-input');
+            const visualUploadBtn = document.getElementById('visual-upload-btn');
+            
+            summaryType.classList.add('hidden');
+            if (visualUploadBtn) visualUploadBtn.classList.add('hidden');
+            
+            if (promptText === '@video') {
+                chip.classList.remove('hidden', 'bg-blue-100', 'text-blue-700', 'border-blue-200', 'bg-purple-100', 'text-purple-700', 'border-purple-200', 'bg-green-100', 'text-green-700', 'border-green-200', 'bg-pink-100', 'text-pink-700', 'border-pink-200');
+                chip.classList.add('flex', 'bg-orange-100', 'text-orange-700', 'border-orange-200');
+                label.textContent = '@video';
+                num.classList.remove('hidden');
+                num.classList.replace('text-blue-800', 'text-orange-800');
+                num.classList.replace('text-purple-800', 'text-orange-800');
+                num.classList.replace('text-green-800', 'text-orange-800');
+                currentActionType = 'video';
+                num.value = 3; // default
+                num.focus();
+                num.select();
+                return;
+            } else if (promptText === '@visual') {
+                chip.classList.remove('hidden', 'bg-blue-100', 'text-blue-700', 'border-blue-200', 'bg-purple-100', 'text-purple-700', 'border-purple-200', 'bg-green-100', 'text-green-700', 'border-green-200', 'bg-orange-100', 'text-orange-700', 'border-orange-200');
+                chip.classList.add('flex', 'bg-pink-100', 'text-pink-700', 'border-pink-200');
+                label.textContent = '@visual';
+                num.classList.add('hidden');
+                if (visualUploadBtn) {
+                    visualUploadBtn.classList.remove('hidden');
+                    visualUploadBtn.classList.remove('text-green-500');
+                    visualUploadBtn.classList.add('text-pink-500');
+                }
+                currentActionType = 'visual';
+                input.focus();
+                return;
+            } else if (promptText === '@quiz') {
+                chip.classList.remove('hidden', 'bg-purple-100', 'text-purple-700', 'border-purple-200', 'bg-green-100', 'text-green-700', 'border-green-200', 'bg-pink-100', 'text-pink-700', 'border-pink-200', 'bg-orange-100', 'text-orange-700', 'border-orange-200');
+                chip.classList.add('flex', 'bg-blue-100', 'text-blue-700', 'border-blue-200');
+                label.textContent = '@quiz';
+                num.classList.remove('hidden');
+                num.classList.replace('text-purple-800', 'text-blue-800');
+                num.classList.replace('text-green-800', 'text-blue-800');
+                currentActionType = 'quiz';
+            } else if (promptText === '@flashcard') {
+                chip.classList.remove('hidden', 'bg-blue-100', 'text-blue-700', 'border-blue-200', 'bg-green-100', 'text-green-700', 'border-green-200', 'bg-pink-100', 'text-pink-700', 'border-pink-200', 'bg-orange-100', 'text-orange-700', 'border-orange-200');
+                chip.classList.add('flex', 'bg-purple-100', 'text-purple-700', 'border-purple-200');
+                label.textContent = '@flashcard';
+                num.classList.remove('hidden');
+                num.classList.replace('text-blue-800', 'text-purple-800');
+                num.classList.replace('text-green-800', 'text-purple-800');
+                currentActionType = 'flashcard';
+            } else if (promptText === '@summary') {
+                chip.classList.remove('hidden', 'bg-blue-100', 'text-blue-700', 'border-blue-200', 'bg-purple-100', 'text-purple-700', 'border-purple-200', 'bg-pink-100', 'text-pink-700', 'border-pink-200', 'bg-orange-100', 'text-orange-700', 'border-orange-200');
+                chip.classList.add('flex', 'bg-green-100', 'text-green-700', 'border-green-200');
+                label.textContent = '@summary';
+                num.classList.add('hidden');
+                summaryType.classList.remove('hidden');
+                summaryType.value = 'detailed'; // default
+                currentActionType = 'summary';
+                input.focus();
+                return;
+            } else {
+                input.value = promptText + " ";
+                input.focus();
+                return;
+            }
+            num.value = 3; // default
+            num.focus();
+            num.select();
+        }
+
+        function removeActionChip() {
+            document.getElementById('action-chip').classList.add('hidden');
+            document.getElementById('action-chip').classList.remove('flex');
+            document.getElementById('summary-type').classList.add('hidden');
+            const visualUploadBtn = document.getElementById('visual-upload-btn');
+            if (visualUploadBtn) visualUploadBtn.classList.add('hidden');
+            currentActionType = null;
+            window.__currentVisualImage = null;
+            document.getElementById('chat-input').focus();
+        }
+
+        let abortController = null;
+
+        async function stopGeneration() {
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+            
+            if (activeGoal) {
+                try {
+                    await fetch(`/api/goals/${activeGoal.id}/chat/stop`, { method: 'POST' });
+                } catch (e) {}
+            }
+            
+            // Force reset chat polling and re-fetch status to ensure UI refreshes correctly
+            if (chatPollInterval) {
+                clearInterval(chatPollInterval);
+                chatPollInterval = null;
+            }
+
+            // Re-enable UI
+            const input = document.getElementById('chat-input');
+            const submitBtn = document.querySelector('#chat-form button[type="submit"]');
+            input.disabled = false;
+            input.placeholder = "Ask Gemminate anything...";
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-gray-500', 'hover:bg-gray-600', 'is-generating');
+                submitBtn.classList.add('bg-black', 'hover:bg-gray-800');
+                submitBtn.innerHTML = '<i data-lucide="arrow-up" class="w-4 h-4"></i>';
+                lucide.createIcons();
+            }
+            
+            // Clean up any AI bubbles that were "generating"
+            const aiBubbles = document.querySelectorAll('.ai-bubble');
+            const lastAiBubble = aiBubbles[aiBubbles.length - 1];
+            if (lastAiBubble && (lastAiBubble.innerHTML.includes('animate-bounce') || lastAiBubble.innerText.includes('Generating'))) {
+                lastAiBubble.innerHTML = '<span class="text-red-500 italic text-sm">Generation stopped by user.</span>';
+            }
+
+            // Reload chat history to sync with server state
+            if (activeGoal) {
+                showGoalContent(activeGoal);
+            }
+        }
+        
+        function closeFixedCanvas() {
+            document.getElementById('fixed-canvas').classList.add('hidden');
+            document.getElementById('chat-box').classList.remove('hidden');
+        }
+
+        async function openQuizzesTab(targetId = null) {
+            if (!activeGoal) return;
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = 'My Quizzes';
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = '<div class="flex justify-center mt-10"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-blue-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                let url = `/api/goals/${activeGoal.id}/quizzes`;
+                if (window.__activeChapterTitle) {
+                    url += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load quizzes');
+                const quizzes = await res.json();
+                
+                if (quizzes.length === 0) {
+                    canvasContent.innerHTML = `
+                        <div class="text-center text-gray-500 mt-10">
+                            <i data-lucide="help-circle" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                            <p>No quizzes generated yet.</p>
+                            <p class="text-sm mt-2">Type <span class="font-bold">@quiz</span> in the chat to generate one.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                if (targetId === true) {
+                    if (quizzes.length > 0) {
+                        targetId = quizzes[0].id;
+                    } else {
+                        // If no quizzes found but we expected one, try again once
+                        setTimeout(() => openQuizzesTab(true), 2000);
+                        return;
+                    }
+                }
+
+                if (targetId) {
+                    const q = quizzes.find(item => item.id === targetId);
+                    if (q) {
+                        let questions = [];
+                        try { questions = JSON.parse(q.questions); } catch(e){}
+                        startQuiz(q.id, questions);
+                        return;
+                    }
+                }
+
+                let html = '<div class="space-y-4 max-w-2xl mx-auto mt-4">';
+                quizzes.forEach(q => {
+                    let questions = [];
+                    try { questions = JSON.parse(q.questions); } catch(e){}
+                    const totalQuestions = questions.length;
+                    
+                    let bestScore = 0;
+                    let attemptsCount = q.attempts ? q.attempts.length : 0;
+                    if (attemptsCount > 0) {
+                        bestScore = Math.max(...q.attempts.map(a => a.score));
+                    }
+                    
+                    html += `
+                        <div class="bg-white border cursor-border rounded-xl p-5 hover:shadow-md transition-shadow">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h4 class="font-bold text-lg text-gray-900">${escapeHtml(q.title)}</h4>
+                                    <p class="text-sm text-gray-500 mt-1">${totalQuestions} questions &bull; ${attemptsCount} attempts</p>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-sm font-semibold text-blue-600 mb-2">Best Score: ${bestScore}/${totalQuestions}</div>
+                                    <button onclick='startQuiz(${q.id}, ${JSON.stringify(questions).replace(/'/g, "&#39;")})' class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                                        ${attemptsCount > 0 ? 'Try Again' : 'Start Quiz'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                canvasContent.innerHTML = html;
+                lucide.createIcons();
+            } catch (err) {
+                canvasContent.innerHTML = `<div class="text-red-500 p-4">Error loading quizzes.</div>`;
+            }
+        }
+
+        async function openFlashcardsTab(targetId = null) {
+            if (!activeGoal) return;
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = 'My Flashcards';
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = '<div class="flex justify-center mt-10"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-purple-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                let url = `/api/goals/${activeGoal.id}/flashcards`;
+                if (window.__activeChapterTitle) {
+                    url += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load flashcards');
+                const flashcards = await res.json();
+                
+                if (flashcards.length === 0) {
+                    canvasContent.innerHTML = `
+                        <div class="text-center text-gray-500 mt-10">
+                            <i data-lucide="layers" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                            <p>No flashcards generated yet.</p>
+                            <p class="text-sm mt-2">Type <span class="font-bold">@flashcard</span> in the chat to generate one.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                if (targetId === true) {
+                    if (flashcards.length > 0) {
+                        targetId = flashcards[0].id;
+                    } else {
+                        // If no flashcards found but we expected one, try again once
+                        setTimeout(() => openFlashcardsTab(true), 2000);
+                        return;
+                    }
+                }
+
+                if (targetId) {
+                    const fc = flashcards.find(item => item.id === targetId);
+                    if (fc) {
+                        let cards = [];
+                        try { cards = JSON.parse(fc.cards); } catch(e){}
+                        viewFlashcards(cards);
+                        return;
+                    }
+                }
+
+                let html = '<div class="space-y-4 max-w-2xl mx-auto mt-4">';
+                flashcards.forEach(fc => {
+                    let cards = [];
+                    try { cards = JSON.parse(fc.cards); } catch(e){}
+                    
+                    html += `
+                        <div class="bg-white border cursor-border rounded-xl p-5 hover:shadow-md transition-shadow">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <h4 class="font-bold text-lg text-gray-900">${escapeHtml(fc.title)}</h4>
+                                    <p class="text-sm text-gray-500 mt-1">${cards.length} cards</p>
+                                </div>
+                                <button onclick='viewFlashcards(${JSON.stringify(cards).replace(/'/g, "&#39;")})' class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold transition-colors">
+                                    View Cards
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                canvasContent.innerHTML = html;
+                lucide.createIcons();
+            } catch (err) {
+                canvasContent.innerHTML = `<div class="text-red-500 p-4">Error loading flashcards.</div>`;
+            }
+        }
+
+        // Global state for active quiz
+        let currentQuizState = null;
+
+        function startQuiz(quizId, questions) {
+            currentQuizState = {
+                quizId: quizId,
+                questions: questions,
+                answers: {},
+                currentIndex: 0
+            };
+            document.getElementById('canvas-title').textContent = 'Taking Quiz';
+            document.getElementById('fixed-canvas').classList.remove('hidden');
+            renderInteractiveQuiz();
+        }
+
+        function renderInteractiveQuiz() {
+            const canvasContent = document.getElementById('canvas-content');
+            canvasContent.innerHTML = '<div id="interactive-quiz-container" class="max-w-2xl mx-auto mt-4"></div>';
+            
+            const q = currentQuizState.questions[currentQuizState.currentIndex];
+            const total = currentQuizState.questions.length;
+            const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+            
+            const container = d3.select("#interactive-quiz-container");
+            const quizBox = container.append("div").attr("class", "quiz-container relative");
+            
+            // Header
+            const header = quizBox.append("div").attr("class", "quiz-header");
+            const titleRow = header.append("div").style("display", "flex").style("align-items", "baseline");
+            titleRow.append("span").attr("class", "quiz-progress-text").text(`${currentQuizState.currentIndex + 1}/${total}`);
+            titleRow.append("p").attr("class", "quiz-question-text").html(processMathAndMarkdown(q.question || q.front)); // support both formats
+            
+            // Options
+            const optionsGroup = quizBox.append("div").attr("class", "quiz-options");
+            
+            const existingAnswer = currentQuizState.answers[currentQuizState.currentIndex];
+            
+            const optionsList = q.options || q.back ? (q.options ? q.options : [q.back]) : [];
+            const correctIndex = q.correct_index !== undefined ? q.correct_index : q.correctIndex !== undefined ? q.correctIndex : 0;
+            
+            optionsList.forEach((opt, idx) => {
+                const optDiv = optionsGroup.append("div").attr("class", "quiz-option");
+                
+                // If already answered, show result
+                if (existingAnswer !== undefined) {
+                    if (idx === correctIndex) {
+                        optDiv.classed("selected-correct", true)
+                            .append("div").attr("class", "quiz-icon").style("margin-left", "auto")
+                            .html('<i data-lucide="check" style="width: 18px; height: 18px;"></i>');
+                    } else if (idx === existingAnswer && existingAnswer !== correctIndex) {
+                        optDiv.classed("selected-wrong", true)
+                            .append("div").attr("class", "quiz-icon").style("margin-left", "auto")
+                            .html('<i data-lucide="x" style="width: 18px; height: 18px;"></i>');
+                    }
+                } else {
+                    // Not answered yet
+                    optDiv.on("click", function() {
+                        currentQuizState.answers[currentQuizState.currentIndex] = idx;
+                        renderInteractiveQuiz(); // Re-render to show answers
+                    });
+                }
+                
+                optDiv.append("div").attr("class", "quiz-option-letter").text(letters[idx] || (idx+1));
+                optDiv.append("div").attr("class", "quiz-option-text").html(processMathAndMarkdown(opt));
+            });
+
+            // Explanation section (initially hidden)
+            if (existingAnswer !== undefined && q.explanation) {
+                const explanationDiv = quizBox.append("div")
+                    .attr("class", "mt-6 p-4 bg-blue-50 border border-blue-100 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300");
+                
+                explanationDiv.append("div").attr("class", "flex items-center gap-2 mb-2")
+                    .html('<i data-lucide="info" class="w-4 h-4 text-blue-600"></i><span class="text-xs font-bold text-blue-800 uppercase tracking-wider">Explanation</span>');
+                
+                explanationDiv.append("div").attr("class", "text-sm text-blue-900 leading-relaxed")
+                    .html(processMathAndMarkdown(q.explanation));
+            }
+            
+            // Footer
+            const footer = quizBox.append("div").attr("class", "flex justify-between items-center mt-6");
+            
+            if (currentQuizState.currentIndex > 0) {
+                footer.append("button").attr("class", "px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold transition-colors").text("Previous")
+                    .on("click", () => {
+                        currentQuizState.currentIndex--;
+                        renderInteractiveQuiz();
+                    });
+            } else {
+                footer.append("div"); // spacer
+            }
+            
+            if (currentQuizState.currentIndex < total - 1) {
+                footer.append("button").attr("class", "px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold transition-colors").text("Next")
+                    .on("click", () => {
+                        currentQuizState.currentIndex++;
+                        renderInteractiveQuiz();
+                    });
+            } else {
+                footer.append("button").attr("class", "px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors").text("Finish Quiz")
+                    .on("click", submitQuiz);
+            }
+            
+            lucide.createIcons();
+            if (window.MathJax) {
+                MathJax.typesetPromise([container.node()]).catch((err) => console.log(err.message));
+            }
+        }
+
+        async function submitQuiz() {
+            let score = 0;
+            const total = currentQuizState.questions.length;
+            
+            for (let i = 0; i < total; i++) {
+                const q = currentQuizState.questions[i];
+                const correctIndex = q.correct_index !== undefined ? q.correct_index : q.correctIndex !== undefined ? q.correctIndex : 0;
+                if (currentQuizState.answers[i] === correctIndex) {
+                    score++;
+                }
+            }
+            
+            try {
+                const res = await fetch(`/api/quizzes/${currentQuizState.quizId}/attempts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        score: score,
+                        total: total,
+                        answers: JSON.stringify(currentQuizState.answers),
+                        completed: true
+                    })
+                });
+                if (res.ok) {
+                    const canvasContent = document.getElementById('canvas-content');
+                    canvasContent.innerHTML = `
+                        <div class="max-w-md mx-auto mt-16 text-center bg-white p-8 rounded-2xl border cursor-border shadow-sm">
+                            <div class="w-20 h-20 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <i data-lucide="award" class="w-10 h-10"></i>
+                            </div>
+                            <h2 class="text-2xl font-bold text-gray-900 mb-2">Quiz Completed!</h2>
+                            <p class="text-gray-500 mb-6">You scored <span class="font-bold text-gray-900">${score}</span> out of <span class="font-bold text-gray-900">${total}</span>.</p>
+                            <button onclick="openQuizzesTab()" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors w-full">
+                                Back to Quizzes
+                            </button>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                }
+            } catch(e) {
+                alert("Failed to submit quiz attempt");
+            }
+        }
+
+        function viewFlashcards(cards) {
+            document.getElementById('canvas-title').textContent = 'Flashcards Viewer';
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = `<div id="flashcards-render-target" class="max-w-2xl mx-auto mt-4"></div>`;
+            // Re-use existing render logic but adapting properties
+            const items = cards.map(c => ({ front: c.front || c.question, back: c.back || c.answer }));
+            renderFlashcardsD3('flashcards-render-target', { items: items }, 0);
+        }
+
+        function playVideo(videoId) {
+            const modal = document.getElementById('video-modal');
+            const iframe = document.getElementById('video-player-iframe');
+            iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            modal.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function closeVideoModal() {
+            const modal = document.getElementById('video-modal');
+            const iframe = document.getElementById('video-player-iframe');
+            iframe.src = '';
+            modal.classList.add('hidden');
+        }
+
+        async function openVideosTab() {
+            if (!activeGoal) return;
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = 'Video Suggestions';
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = '<div class="flex justify-center mt-10"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-orange-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                let url = `/api/goals/${activeGoal.id}/videos`;
+                if (window.__activeChapterTitle) {
+                    url += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load videos');
+                const videos = await res.json();
+                
+                if (videos.length === 0) {
+                    canvasContent.innerHTML = `
+                        <div class="text-center text-gray-500 mt-10">
+                            <i data-lucide="video" class="w-12 h-12 mx-auto mb-3 opacity-50 text-orange-400"></i>
+                            <p>No video suggestions generated yet.</p>
+                            <p class="text-sm mt-2">Type <span class="font-bold">@video [term]</span> in the chat to search for videos.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<div class="space-y-8 max-w-4xl mx-auto mt-4">';
+                videos.forEach(vGroup => {
+                    let vData = [];
+                    try { vData = JSON.parse(vGroup.video_data); } catch(e){}
+                    
+                    html += `
+                        <div class="flex flex-col gap-4">
+                            <h4 class="font-bold text-xl text-gray-900 border-l-4 border-orange-500 pl-3">Videos for: ${escapeHtml(vGroup.term)}</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                ${vData.map(v => `
+                                    <div class="bg-white border cursor-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow group cursor-pointer" onclick="playVideo('${v.video_id}')">
+                                        <div class="relative aspect-video">
+                                            <img src="${v.thumbnail}" class="w-full h-full object-cover" alt="${escapeHtml(v.title)}">
+                                            <div class="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors flex items-center justify-center">
+                                                <div class="w-12 h-12 bg-white/90 rounded-full flex items-center justify-center text-red-600 shadow-lg group-hover:scale-110 transition-transform">
+                                                    <i data-lucide="play" class="w-6 h-6 fill-current"></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="p-3">
+                                            <h5 class="font-semibold text-sm text-gray-800 leading-tight">${escapeHtml(v.title)}</h5>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                canvasContent.innerHTML = html;
+                lucide.createIcons();
+            } catch (err) {
+                canvasContent.innerHTML = `<div class="text-red-500 p-4">Error loading videos.</div>`;
+            }
+        }
+
+        function toggleFullscreenVisual(btn) {
+            // Find the visual container whether it's in its normal state or expanded
+            const container = btn.parentElement;
+            if (!container) return;
+            
+            const isFullscreen = container.classList.contains('fixed');
+            
+            if (!isFullscreen) {
+                // Save original classes
+                container.setAttribute('data-original-classes', container.className);
+                
+                // Switch to fixed full screen
+                container.className = "fixed inset-4 z-[200] bg-white rounded-xl shadow-2xl border-2 border-gray-200 overflow-hidden";
+                
+                // Change icon
+                btn.innerHTML = '<i data-lucide="minimize-2" class="w-6 h-6"></i>';
+                btn.title = "Reduce Visual";
+            } else {
+                // Revert back
+                const originalClasses = container.getAttribute('data-original-classes');
+                if (originalClasses) {
+                    container.className = originalClasses;
+                } else {
+                    container.className = "border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px]";
+                }
+                
+                // Change icon
+                btn.innerHTML = '<i data-lucide="maximize-2" class="w-4 h-4"></i>';
+                btn.title = "Expand Visual";
+            }
+            
+            if (window.lucide) lucide.createIcons();
+        }
+
+        async function openVisualsTab(targetId = null) {
+            if (!activeGoal) return;
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = 'My Visuals';
+            canvas.classList.remove('hidden');
+            canvasContent.innerHTML = '<div class="flex justify-center mt-10"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-pink-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                let url = `/api/goals/${activeGoal.id}/visuals`;
+                if (window.__activeChapterTitle) {
+                    url += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load visuals');
+                const visuals = await res.json();
+                
+                if (visuals.length === 0) {
+                    canvasContent.innerHTML = `
+                        <div class="text-center text-gray-500 mt-10">
+                            <i data-lucide="image" class="w-12 h-12 mx-auto mb-3 opacity-50 text-pink-400"></i>
+                            <p>No visuals generated yet.</p>
+                            <p class="text-sm mt-2">Type <span class="font-bold">@visual</span> or select a figure in the PDF to generate one.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<div class="space-y-8 max-w-4xl mx-auto mt-4">';
+                visuals.forEach(v => {
+                    const safeHtml = v.html_content;
+                    html += `
+                        <div class="flex flex-col gap-4 bg-white border cursor-border rounded-xl p-5 shadow-sm">
+                            <div class="flex items-center justify-between">
+                                <h4 class="font-bold text-xl text-gray-900 border-l-4 border-pink-500 pl-3">${escapeHtml(v.term)}</h4>
+                                <button class="text-gray-500 hover:text-pink-500 p-1 transition-colors" onclick="toggleFullscreenVisual(this.closest('.flex-col').querySelector('button[title=\\'Expand Visual\\']'))">
+                                    <i data-lucide="maximize-2" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+                            <div class="border rounded border-gray-200 overflow-hidden relative bg-white w-full h-[450px]">
+                                <button class="absolute top-2 right-2 bg-white/80 hover:bg-white text-gray-700 p-1.5 rounded shadow-sm z-50 transition-colors" title="Expand Visual" onclick="toggleFullscreenVisual(this)">
+                                    <i data-lucide="maximize-2" class="w-4 h-4"></i>
+                                </button>
+                                <iframe class="w-full h-full" frameborder="0" sandbox="allow-scripts allow-same-origin"></iframe>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                canvasContent.innerHTML = html;
+                
+                // Load iframe contents
+                const frames = canvasContent.querySelectorAll('iframe');
+                visuals.forEach((v, idx) => {
+                    const iframe = frames[idx];
+                    iframe.contentWindow.document.open();
+                    iframe.contentWindow.document.write(v.html_content);
+                    iframe.contentWindow.document.close();
+                });
+
+                lucide.createIcons();
+            } catch (err) {
+                console.error(err);
+                canvasContent.innerHTML = `<div class="text-red-500 p-4">Error loading visuals.</div>`;
+            }
+        }
+
+        async function openSummariesTab(targetId = null) {
+            if (!activeGoal) return;
+            const canvas = document.getElementById('fixed-canvas');
+            const canvasContent = document.getElementById('canvas-content');
+            document.getElementById('canvas-title').textContent = 'My Summaries';
+            canvas.classList.remove('hidden');
+            
+            // For summaries, we'll extract them from chat history
+            canvasContent.innerHTML = '<div class="flex justify-center mt-10"><i data-lucide="loader-2" class="w-6 h-6 animate-spin text-indigo-500"></i></div>';
+            lucide.createIcons();
+
+            try {
+                let url = `/api/goals/${activeGoal.id}/chat`;
+                if (window.__activeChapterTitle) {
+                    url += `?chapter_title=${encodeURIComponent(window.__activeChapterTitle)}`;
+                }
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Failed to load chat history for summaries');
+                const chatHistory = await res.json();
+                
+                // Find pairs of @summary user requests and AI responses
+                const summaries = [];
+                for (let i = 0; i < chatHistory.length - 1; i++) {
+                    const msg = chatHistory[i];
+                    if (msg.role === 'user' && msg.content.includes('@summary')) {
+                        const nextMsg = chatHistory[i + 1];
+                        if (nextMsg && nextMsg.role === 'ai') {
+                            summaries.push({
+                                query: msg.content.replace(/^[a-z-]+@summary\s*/i, '').trim() || 'Summary Request',
+                                content: nextMsg.content
+                            });
+                        }
+                    }
+                }
+                
+                if (summaries.length === 0) {
+                    canvasContent.innerHTML = `
+                        <div class="text-center text-gray-500 mt-10">
+                            <i data-lucide="file-text" class="w-12 h-12 mx-auto mb-3 opacity-50 text-indigo-400"></i>
+                            <p>No summaries generated yet.</p>
+                            <p class="text-sm mt-2">Type <span class="font-bold">@summary</span> in the chat to generate one.</p>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                let html = '<div class="space-y-6 max-w-4xl mx-auto mt-4">';
+                summaries.forEach((s, idx) => {
+                    html += `
+                        <div class="bg-white border cursor-border rounded-xl p-5 shadow-sm">
+                            <h4 class="font-bold text-lg text-gray-900 border-l-4 border-indigo-500 pl-3 mb-4">${escapeHtml(s.query)}</h4>
+                            <div class="prose prose-sm max-w-none text-gray-700 summary-content-${idx}">
+                                ${processMathAndMarkdown(s.content)}
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                canvasContent.innerHTML = html;
+                
+                if (window.MathJax) {
+                    MathJax.typesetPromise([canvasContent]).catch((err) => console.log(err.message));
+                }
+                lucide.createIcons();
+            } catch (err) {
+                canvasContent.innerHTML = `<div class="text-red-500 p-4">Error loading summaries.</div>`;
+            }
+        }
+
+        // Resizer Logic
+        const resizer = document.getElementById('resizer');
+        const sidebarResizer = document.getElementById('sidebar-resizer');
+        const pdfContainer = document.getElementById('pdf-container');
+        const chatContainer = document.getElementById('chat-container');
+        const sidePanel = document.getElementById('side-panel');
+        let isResizing = false;
+        let isSidebarResizing = false;
+
+        if (sidebarResizer) {
+            sidebarResizer.addEventListener('mousedown', (e) => {
+                isSidebarResizing = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none';
+                const overlay = document.createElement('div');
+                overlay.id = 'resize-overlay';
+                overlay.style.position = 'fixed';
+                overlay.style.inset = '0';
+                overlay.style.zIndex = '9999';
+                overlay.style.cursor = 'col-resize';
+                document.body.appendChild(overlay);
+            });
+        }
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+            // Prevent text selection while resizing
+            document.body.style.userSelect = 'none';
+            // Add a temporary overlay to catch mouse events if we're over an iframe
+            const overlay = document.createElement('div');
+            overlay.id = 'resize-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.zIndex = '9999';
+            overlay.style.cursor = 'col-resize';
+            document.body.appendChild(overlay);
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isSidebarResizing) {
+                // Determine new width based on mouse X position
+                // The left nav bar is 56px (w-14)
+                let newWidth = e.clientX - 56;
+                if (newWidth < 150) newWidth = 150; // min width
+                if (newWidth > 500) newWidth = 500; // max width
+                sidePanel.style.width = `${newWidth}px`;
+                // Disable transition during drag for smoothness
+                sidePanel.style.transition = 'none';
+            }
+
+            if (isResizing) {
+                const workspace = document.getElementById('workspace');
+                const workspaceRect = workspace.getBoundingClientRect();
+                const relativeX = e.clientX - workspaceRect.left;
+                
+                // Calculate percentage
+                const percentage = (relativeX / workspaceRect.width) * 100;
+                
+                // Bounds checking (min 20%, max 80%)
+                if (percentage > 10 && percentage < 90) {
+                    pdfContainer.style.width = `${percentage}%`;
+                    chatContainer.style.width = `${100 - percentage}%`;
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isSidebarResizing) {
+                isSidebarResizing = false;
+                sidePanel.style.transition = ''; // restore transition
+            }
+            if (isResizing) {
+                isResizing = false;
+            }
+            document.body.style.cursor = 'default';
+            document.body.style.userSelect = 'auto';
+            const overlay = document.getElementById('resize-overlay');
+            if (overlay) overlay.remove();
+        });
+
+
+        // Update custom widths when resizer is used
+        resizer.addEventListener('mousedown', () => {
+            // Remove transition during resize for smooth dragging
+            pdfContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
+            chatContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (!pdfContainer.classList.contains('transition-all')) {
+                pdfContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
+                chatContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
+            }
+        });
+
+        async function init() {
+            await loadGoals();
+            const lastGoalId = localStorage.getItem('lastGoalId');
+            if (lastGoalId && currentGoals.length > 0) {
+                const goal = currentGoals.find(g => String(g.id) === String(lastGoalId));
+                if (goal) {
+                    selectGoal(goal);
+                }
+            }
+        }
+
+        init();
+    
