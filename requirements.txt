@@ -16,3 +16,4 @@ langchain-huggingface
 faiss-cpu
 pypdf
 sentence-transformers
+json_repair
