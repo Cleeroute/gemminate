@@ -15,4 +15,6 @@ services:
         sync: false
       - key: VECTOR_STORES_DIR
         value: static/vector_stores
+      - key: PYTHON_VERSION
+        value: "3.11"
     autoDeploy: true
