@@ -723,19 +723,24 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
                     max_tokens=4000
                 )
                 tree_res = await tree_llm.ainvoke([HumanMessage(content=tree_prompt)])
-                tree_content = tree_res.content.strip()
                 
-                json_match = re.search(r'\{.*\}', tree_content, re.DOTALL)
-                if json_match:
-                    tree_content = json_match.group(0)
-                
-                try:
-                    tree_data = json_repair.loads(tree_content)
-                    if not isinstance(tree_data, dict):
-                        tree_data = {'tree': []}
-                except Exception as e:
-                    print(f"JSON parsing failed after json_repair: {e}")
+                if not tree_res or not tree_res.content:
+                    print(f"No response from LLM for tree generation in {chapter['title']}")
                     tree_data = {'tree': []}
+                else:
+                    tree_content = tree_res.content.strip()
+                    
+                    json_match = re.search(r'\{.*\}', tree_content, re.DOTALL)
+                    if json_match:
+                        tree_content = json_match.group(0)
+                    
+                    try:
+                        tree_data = json_repair.loads(tree_content)
+                        if not isinstance(tree_data, dict):
+                            tree_data = {'tree': []}
+                    except Exception as e:
+                        print(f"JSON parsing failed after json_repair: {e}")
+                        tree_data = {'tree': []}
                 
                 if tree_data is None:
                     tree_data = {'tree': []}
@@ -1847,13 +1852,14 @@ async def chat_with_ai(
             try:
                 msg = db2.query(models.ChatMessage).filter(models.ChatMessage.id == ai_msg.id).first()
                 if msg:
-                    if msg.msg_type == "quiz" and success:
+                    if msg.msg_type == "quiz" and success and 'data' in locals():
                         try:
                             if not isinstance(data, list):
                                 data = [data]
                                 
                             quiz_ids = []
                             for item in data:
+                                if not isinstance(item, dict): continue
                                 quiz_title = item.get("title", "Generated Quiz")
                                 if msg.chapter_title and msg.chapter_title not in quiz_title:
                                     quiz_title = f"{msg.chapter_title}: {quiz_title}"
@@ -1874,13 +1880,14 @@ async def chat_with_ai(
                         except Exception as e:
                             print("Failed to save quiz to DB:", e)
                             msg.content = full_content
-                    elif msg.msg_type == "flashcard" and success:
+                    elif msg.msg_type == "flashcard" and success and 'data' in locals():
                         try:
                             if not isinstance(data, list):
                                 data = [data]
                                 
                             fc_ids = []
                             for item in data:
+                                if not isinstance(item, dict): continue
                                 fc_title = item.get("title", "Generated Flashcards")
                                 if msg.chapter_title and msg.chapter_title not in fc_title:
                                     fc_title = f"{msg.chapter_title}: {fc_title}"
