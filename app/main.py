@@ -349,13 +349,20 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
         update_goal_status(goal_id, "processing", "AI analyzing TOC and selecting relevant chapters...", db_session_factory)
         
         api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY not found in environment variables")
         from langchain_openai import ChatOpenAI
         from langchain_core.messages import HumanMessage
         llm = ChatOpenAI(
             model="google/gemma-4-26b-a4b-it",
             openai_api_key=api_key,
             openai_api_base="https://openrouter.ai/api/v1",
-            max_tokens=4000
+            max_tokens=4000,
+            default_headers={
+                "Authorization": f"Bearer {api_key}",
+                "HTTP-Referer": "https://gemminate.com", # Required for some OpenRouter models
+                "X-Title": "Gemminate"
+            }
         )
 
         prompt = (
