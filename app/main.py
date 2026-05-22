@@ -13,6 +13,10 @@ import logging
 import asyncio
 import json
 import re
+import math
+import time
+import concurrent.futures
+import threading
 from datetime import timedelta
 import json_repair
 from langchain_community.document_loaders import PyPDFLoader
@@ -24,9 +28,11 @@ from langchain_openai import OpenAIEmbeddings
 
 # Global embeddings model using OpenRouter
 embeddings_model = OpenAIEmbeddings(
-    model="sentence-transformers/all-minilm-l6-v2",
+    model="google/gemini-embedding-2-preview",
     openai_api_base="https://openrouter.ai/api/v1",
-    openai_api_key=os.getenv("OPENROUTER_API_KEY", "dummy")
+    openai_api_key=os.getenv("OPENROUTER_API_KEY", "dummy"),
+    check_embedding_ctx_length=False,
+    model_kwargs={"encoding_format": "float"}
 )
 from langchain_community.vectorstores import FAISS
 from langchain_openai import ChatOpenAI
@@ -154,6 +160,162 @@ def update_goal_status(goal_id: int, status: str, message: str, db_session_facto
     finally:
         db.close()
 
+
+_toc_lock = threading.Lock()
+
+def process_page_range(pdf_path, start_page, end_page):
+    """
+    Worker function that opens the PDF once and processes a range of pages.
+    """
+    import fitz
+    import re
+    
+    doc = fitz.open(pdf_path)
+    headings = []
+    
+    # Common patterns to filter out or identify
+    noise_patterns = [
+        r'^\d+$', # Just numbers (page numbers)
+        r'^Figure\s+\d+', 
+        r'^Table\s+\d+',
+        r'^Page\s+\d+',
+        r'^\d+\s+of\s+\d+$'
+    ]
+    
+    for page_num in range(start_page, end_page):
+        page = doc[page_num]
+        blocks = page.get_text("dict")["blocks"]
+        
+        for b in blocks:
+            if "lines" in b:
+                for l in b["lines"]:
+                    for s in l["spans"]:
+                        # Heuristic: Headings are usually larger and/or bold
+                        is_likely_heading = s["size"] > 12 or (s["size"] > 10.5 and "Bold" in s["font"])
+                        if is_likely_heading:
+                            clean_text = s["text"].strip()
+                            # Filter out noise
+                            if clean_text and len(clean_text) > 3:
+                                if not any(re.search(p, clean_text, re.I) for p in noise_patterns):
+                                    headings.append({
+                                        "text": clean_text,
+                                        "size": round(s["size"], 1),
+                                        "bold": "Bold" in s["font"],
+                                        "page": page_num + 1
+                                    })
+    doc.close()
+    return headings
+
+def extract_toc_parallel(pdf_path, max_pages=60):
+    import fitz
+    with _toc_lock:
+        doc = fitz.open(pdf_path)
+        total_pages = min(len(doc), max_pages)
+        doc.close()
+    
+    num_cores = os.cpu_count() or 2
+    pages_per_core = math.ceil(total_pages / num_cores)
+    
+    segments = []
+    for i in range(num_cores):
+        start = i * pages_per_core
+        end = min(start + pages_per_core, total_pages)
+        if start < end:
+            segments.append((start, end))
+            
+    all_headings = []
+    
+    with concurrent.futures.ProcessPoolExecutor(max_workers=num_cores) as executor:
+        futures = [
+            executor.submit(process_page_range, pdf_path, start, end) 
+            for start, end in segments
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            all_headings.extend(future.result())
+            
+    return sorted(all_headings, key=lambda x: x['page'])
+
+def headings_to_tree_json(headings, goal_title="", goal_description=""):
+    if not headings:
+        return []
+        
+    # Filter unique headings to avoid duplicates
+    seen_headings = set()
+    unique_headings = []
+    for h in headings:
+        key = (h['text'].lower(), h['page'])
+        if key not in seen_headings:
+            unique_headings.append(h)
+            seen_headings.add(key)
+    
+    headings = unique_headings
+    sizes = sorted(list(set([h['size'] for h in headings])), reverse=True)
+    
+    chapters = []
+    last_nodes = { -1: "root" }
+    
+    # Heuristic for top-level chapters: largest font sizes
+    top_level_sizes = sizes[:2] if len(sizes) > 1 else sizes
+    
+    for i, h in enumerate(headings):
+        node_id = f"node_{i}"
+        level = sizes.index(h['size'])
+        
+        # Determine if this should be a top-level chapter
+        # 1. Largest font size
+        # 2. Contains keywords like "Chapter", "Section", "Part"
+        # 3. If it's the first heading
+        is_top_level = h['size'] in top_level_sizes or re.match(r'^(Chapter|Section|Part|Unit|Module)\s+\d+', h['text'], re.I)
+        
+        if is_top_level:
+            chapters.append({
+                "id": i,
+                "title": h['text'],
+                "start": h['page'],
+                "selected": False, 
+                "children": []
+            })
+            last_nodes[level] = node_id
+            
+        last_nodes[level] = node_id
+        for l in list(last_nodes.keys()):
+            if l > level:
+                del last_nodes[l]
+    
+    # Provide a flat list of top-level chapters for extract_toc_task to show to the user
+    for i in range(len(chapters)):
+        if i < len(chapters) - 1:
+            chapters[i]["end"] = chapters[i+1]["start"] - 1
+        else:
+            chapters[i]["end"] = chapters[i]["start"] + 50
+
+    # Apply selection logic:
+    # 1. Identify "target" chapters based on goal keywords
+    target_indices = []
+    keywords = (goal_title + " " + (goal_description or "")).lower().split()
+    # Filter keywords to keep only meaningful ones
+    meaningful_keywords = [kw for kw in keywords if len(kw) > 3 and kw not in ['master', 'learn', 'understand', 'study', 'basics', 'intro', 'introduction']]
+    
+    for idx, ch in enumerate(chapters):
+        ch_title_lower = ch['title'].lower()
+        if any(kw in ch_title_lower for kw in meaningful_keywords):
+            target_indices.append(idx)
+            ch['selected'] = True
+    
+    # 2. If no target found, select first few by default
+    if not target_indices:
+        for ch in chapters[:3]: 
+            ch['selected'] = True
+        target_indices = [idx for idx in range(min(len(chapters), 3))]
+
+    # 3. CRITICAL: Select all chapters BEFORE the last preselected one
+    if target_indices:
+        last_preselected_idx = max(target_indices)
+        for idx in range(last_preselected_idx):
+            chapters[idx]['selected'] = True
+
+    return chapters
+
 def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, db_session_factory):
     import fitz
     try:
@@ -248,6 +410,13 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
         if not chapters:
             # If no TOC found by LLM, just pre-select the whole book as 1 chapter
             chapters.append({"id": 0, "title": "Full Document", "start": 1, "end": doc.page_count, "selected": True})
+
+        # --- THIS IS WHERE WE APPLY THE "SELECT CHAPTERS BEFORE PRESELECTED ONES" LOGIC ---
+        target_indices = [i for i, ch in enumerate(chapters) if ch.get('selected', False)]
+        if target_indices:
+            last_preselected_idx = max(target_indices)
+            for i in range(last_preselected_idx):
+                chapters[i]['selected'] = True
 
         chapters_json = json.dumps(chapters)
         db = db_session_factory()
@@ -567,8 +736,13 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
                 except Exception as e:
                     print(f"JSON parsing failed after json_repair: {e}")
                     tree_data = {'tree': []}
+                
+                if tree_data is None:
+                    tree_data = {'tree': []}
                     
                 chapter_tree = tree_data.get('tree', [])
+                if chapter_tree is None:
+                    chapter_tree = []
                 chapter['original_tree'] = chapter_tree  # Save original tree before preprocessing
                 
                 # Do not remove redundant root node anymore as requested by user
@@ -930,13 +1104,15 @@ async def select_chapters(
             db = SessionLocal()
             try:
                 goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
-                if goal:
+                if goal and goal.chapters_data:
                     chapters_data = json.loads(goal.chapters_data)
-                    # Mark all as pending/loading initially
-                    for c in chapters_data:
-                        c['status'] = 'loading'
-                    goal.chapters_data = json.dumps(chapters_data)
-                    db.commit()
+                    if chapters_data and isinstance(chapters_data, list):
+                        # Mark all as pending/loading initially
+                        for c in chapters_data:
+                            if isinstance(c, dict):
+                                c['status'] = 'loading'
+                        goal.chapters_data = json.dumps(chapters_data)
+                        db.commit()
             finally:
                 db.close()
 
