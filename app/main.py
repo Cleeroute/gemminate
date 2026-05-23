@@ -359,6 +359,7 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
             openai_api_base="https://openrouter.ai/api/v1",
             max_tokens=4000,
             default_headers={
+                "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "https://gemminate.com", # Required for some OpenRouter models
                 "X-Title": "Gemminate"
             }
