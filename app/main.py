@@ -29,8 +29,8 @@ from langchain_openai import OpenAIEmbeddings
 # Global embeddings model using OpenRouter
 embeddings_model = OpenAIEmbeddings(
     model="google/gemini-embedding-2-preview",
-    openai_api_base="https://openrouter.ai/api/v1",
-    openai_api_key=os.getenv("OPENROUTER_API_KEY", "dummy"),
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY", "dummy"),
     check_embedding_ctx_length=False,
     model_kwargs={"encoding_format": "float"}
 )
@@ -117,8 +117,8 @@ async def call_model(state: AgentState, config: RunnableConfig):
     api_key = os.getenv("OPENROUTER_API_KEY")
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=4096,
         streaming=True
     )
@@ -355,8 +355,8 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
         from langchain_core.messages import HumanMessage
         llm = ChatOpenAI(
             model="google/gemma-4-26b-a4b-it",
-            openai_api_key=api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
             max_tokens=4000,
             default_headers={
                 "Authorization": f"Bearer {api_key}",
@@ -446,8 +446,8 @@ async def get_subchapters_for_chapter(chapter, doc, api_key, goal_id, db_session
         from langchain_core.messages import HumanMessage
         llm = ChatOpenAI(
             model="google/gemma-4-26b-a4b-it",
-            openai_api_key=api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
             max_tokens=2000
         )
         
@@ -593,8 +593,8 @@ async def describe_topics_with_vision(goal_id, chapter, doc, api_key, db_session
                 
                 vision_llm = ChatOpenAI(
                     model="google/gemma-4-26b-a4b-it", # using the requested model
-                    openai_api_key=api_key,
-                    openai_api_base="https://openrouter.ai/api/v1",
+                    api_key=api_key,
+                    base_url="https://openrouter.ai/api/v1",
                     max_tokens=1000
                 )
                 
@@ -662,8 +662,8 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
         from langchain_core.messages import HumanMessage
         llm = ChatOpenAI(
             model="google/gemma-4-26b-a4b-it",
-            openai_api_key=api_key,
-            openai_api_base="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1",
             max_tokens=1000
         )
         
@@ -732,8 +732,8 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
                 # Use a separate LLM instance for tree generation to allow for larger token outputs if the chapter is very long
                 tree_llm = ChatOpenAI(
                     model="google/gemma-4-26b-a4b-it",
-                    openai_api_key=api_key,
-                    openai_api_base="https://openrouter.ai/api/v1",
+                    api_key=api_key,
+                    base_url="https://openrouter.ai/api/v1",
                     max_tokens=4000
                 )
                 tree_res = await tree_llm.ainvoke([HumanMessage(content=tree_prompt)])
@@ -1295,8 +1295,8 @@ def get_qualify_questions(
     api_key = os.getenv("OPENROUTER_API_KEY")
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=1000
     )
     prompt = (
@@ -1360,8 +1360,8 @@ async def score_qualify(
     api_key = os.getenv("OPENROUTER_API_KEY")
     vision_llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=500
     )
     
@@ -1512,8 +1512,8 @@ async def analyze_page(data: dict):
     api_key = os.getenv("OPENROUTER_API_KEY")
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=1000
     )
     
@@ -1536,8 +1536,8 @@ async def generate_tree(data: dict):
     api_key = os.getenv("OPENROUTER_API_KEY")
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=2000
     )
     
@@ -1620,8 +1620,8 @@ async def get_suggestions(
     api_key = os.getenv("OPENROUTER_API_KEY")
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=500
     )
 
@@ -1718,8 +1718,8 @@ async def chat_with_ai(
             if len(term.split()) > 11:
                 summarize_llm = ChatOpenAI(
                     model="google/gemma-4-26b-a4b-it",
-                    openai_api_key=os.getenv("OPENROUTER_API_KEY"),
-                    openai_api_base="https://openrouter.ai/api/v1",
+                    api_key=os.getenv("OPENROUTER_API_KEY"),
+                    base_url="https://openrouter.ai/api/v1",
                     temperature=0.3
                 )
                 try:
