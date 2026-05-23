@@ -359,7 +359,6 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
             openai_api_base="https://openrouter.ai/api/v1",
             max_tokens=4000,
             default_headers={
-                "Authorization": f"Bearer {api_key}",
                 "HTTP-Referer": "https://gemminate.com", # Required for some OpenRouter models
                 "X-Title": "Gemminate"
             }
@@ -501,7 +500,11 @@ async def get_subchapters_for_chapter(chapter, doc, api_key, goal_id, db_session
             data = json_repair.loads(json_match.group(0))
         else:
             data = json_repair.loads(response.content)
-        chapter['subchapters'] = data.get('subchapters', []) if isinstance(data, dict) else []
+        
+        subs = data.get('subchapters', []) if isinstance(data, dict) else []
+        if not isinstance(subs, list):
+            subs = []
+        chapter['subchapters'] = subs
     except Exception as e:
         print(f"Error extracting subchapters for {chapter['title']}: {e}")
         chapter['subchapters'] = []
@@ -537,7 +540,10 @@ async def describe_topics_with_vision(goal_id, chapter, doc, api_key, db_session
         
         # For each subchapter/topic, find the most relevant page and describe it
         all_topics = []
-        for sub in chapter.get('subchapters', []):
+        subs = chapter.get('subchapters', [])
+        if not isinstance(subs, list):
+            subs = []
+        for sub in subs:
             # The prompt now asks to merge sections and topics, but the structure remains the same
             for topic_obj in sub.get('topics', []):
                 # Ensure topic is a string
@@ -771,6 +777,8 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
                 goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
                 if goal:
                     chapters = json.loads(goal.chapters_data)
+                    if not isinstance(chapters, list):
+                        chapters = []
                     for c in chapters:
                         if str(c['id']) == str(chapter['id']):
                             c['tree'] = chapter.get('tree', [])
@@ -796,20 +804,30 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
             if filtered_docs:
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
                 chunks = text_splitter.split_documents(filtered_docs)
-                new_vs = FAISS.from_documents(chunks, embeddings_model)
-                
-                if not os.path.exists(vector_store_path):
-                    os.makedirs(vector_store_path)
+                if not chunks:
+                    return
+                try:
+                    new_vs = FAISS.from_documents(chunks, embeddings_model)
                     
-                import threading
-                faiss_lock = threading.Lock()
-                with faiss_lock:
-                    if os.path.exists(os.path.join(vector_store_path, "index.faiss")):
-                        existing_vs = FAISS.load_local(vector_store_path, embeddings_model, allow_dangerous_deserialization=True)
-                        existing_vs.merge_from(new_vs)
-                        existing_vs.save_local(vector_store_path)
+                    if not os.path.exists(vector_store_path):
+                        os.makedirs(vector_store_path)
+                        
+                    import threading
+                    faiss_lock = threading.Lock()
+                    with faiss_lock:
+                        if os.path.exists(os.path.join(vector_store_path, "index.faiss")):
+                            existing_vs = FAISS.load_local(vector_store_path, embeddings_model, allow_dangerous_deserialization=True)
+                            existing_vs.merge_from(new_vs)
+                            existing_vs.save_local(vector_store_path)
+                        else:
+                            new_vs.save_local(vector_store_path)
+                except TypeError as e:
+                    if "NoneType" in str(e):
+                        print(f"Embedding failed due to OpenRouter API error (TypeError: {e}). Skipping vector extraction for this chunk.")
                     else:
-                        new_vs.save_local(vector_store_path)
+                        raise e
+                except Exception as e:
+                    print(f"Error extracting vectors: {e}")
 
         await asyncio.gather(
             build_tree(),
@@ -830,6 +848,8 @@ def process_remaining_chapters_task(goal_id: int, chapters: list, pdf_path: str,
         goal = db.query(models.Goal).filter(models.Goal.id == goal_id).first()
         if goal:
             chapters_data = json.loads(goal.chapters_data)
+            if not isinstance(chapters_data, list):
+                chapters_data = []
             for chapter in chapters:
                 for cd in chapters_data:
                     if str(cd['id']) == str(chapter['id']):
@@ -1145,6 +1165,8 @@ async def select_chapters(
                 )
                 thread.start()
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             update_goal_status(goal_id, "failed", f"Error processing first chapter: {str(e)}", SessionLocal)
 
     background_tasks.add_task(process_first_and_queue_rest, goal.id, all_selected, actual_pdf_path, goal.vector_store_path, api_key)
