@@ -10,8 +10,8 @@ api_key = os.getenv("OPENROUTER_API_KEY")
 try:
     llm = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=4000,
         default_headers={
             "Authorization": f"Bearer {api_key}",
@@ -27,8 +27,8 @@ except Exception as e:
 try:
     llm2 = ChatOpenAI(
         model="google/gemma-4-26b-a4b-it",
-        openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        base_url="https://openrouter.ai/api/v1",
         max_tokens=4000
     )
     res = llm2.invoke([HumanMessage(content="Hello")])

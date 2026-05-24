@@ -306,13 +306,6 @@ def headings_to_tree_json(headings, goal_title="", goal_description=""):
     if not target_indices:
         for ch in chapters[:3]: 
             ch['selected'] = True
-        target_indices = [idx for idx in range(min(len(chapters), 3))]
-
-    # 3. CRITICAL: Select all chapters BEFORE the last preselected one
-    if target_indices:
-        last_preselected_idx = max(target_indices)
-        for idx in range(last_preselected_idx):
-            chapters[idx]['selected'] = True
 
     return chapters
 
@@ -388,7 +381,7 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
             "- \"title\": the title of the chapter\n"
             "- \"start\": the calculated PDF Page Index (integer)\n"
             "- \"end\": the calculated PDF Page Index (integer)\n"
-            "- \"selected\": boolean (true if relevant to the user's goal, false otherwise)"
+            "- \"selected\": boolean (true ONLY if highly relevant and necessary for the user's learning goal, false otherwise)"
         )
 
         response = llm.invoke([HumanMessage(content=prompt)])
@@ -417,13 +410,6 @@ def extract_toc_task(goal_id: int, pdf_path: str, title: str, description: str, 
         if not chapters:
             # If no TOC found by LLM, just pre-select the whole book as 1 chapter
             chapters.append({"id": 0, "title": "Full Document", "start": 1, "end": doc.page_count, "selected": True})
-
-        # --- THIS IS WHERE WE APPLY THE "SELECT CHAPTERS BEFORE PRESELECTED ONES" LOGIC ---
-        target_indices = [i for i, ch in enumerate(chapters) if ch.get('selected', False)]
-        if target_indices:
-            last_preselected_idx = max(target_indices)
-            for i in range(last_preselected_idx):
-                chapters[i]['selected'] = True
 
         chapters_json = json.dumps(chapters)
         db = db_session_factory()

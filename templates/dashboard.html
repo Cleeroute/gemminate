@@ -2171,6 +2171,11 @@
                 return;
             }
             
+            const allChaptersTitle = document.createElement('h4');
+            allChaptersTitle.className = "text-md font-bold text-gray-900 mb-4";
+            allChaptersTitle.textContent = "All Detected Chapters";
+            listContainer.appendChild(allChaptersTitle);
+            
             chapters.forEach(c => {
                 const label = document.createElement('label');
                 label.className = `flex items-center gap-3 p-3 rounded-lg border cursor-border hover:bg-gray-50 cursor-pointer transition-colors mb-2 ${c.selected ? 'bg-blue-50/50 border-blue-200' : ''}`;
@@ -2218,6 +2223,7 @@
                 label.appendChild(textContainer);
                 listContainer.appendChild(label);
             });
+
         }
         
         async function submitChapters() {

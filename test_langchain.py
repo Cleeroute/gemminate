@@ -18,8 +18,8 @@ client = httpx.Client(
 
 embeddings_model = OpenAIEmbeddings(
     model="google/gemini-embedding-2-preview",
-    openai_api_base="https://openrouter.ai/api/v1",
-    openai_api_key=api_key,
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
     check_embedding_ctx_length=False,
     model_kwargs={"encoding_format": "float"},
     http_client=client
