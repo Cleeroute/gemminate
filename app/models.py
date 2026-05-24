@@ -144,3 +144,10 @@ class Subsection(Base):
     # content = Column(Text)
     
     section = relationship("Section", back_populates="subsections")
+
+class CompletedSection(Base):
+    __tablename__ = "completed_sections"
+    id = Column(Integer, primary_key=True, index=True)
+    goal_id = Column(Integer, ForeignKey("goals.id"))
+    checkbox_id = Column(String, index=True)
+    completed = Column(Boolean, default=True)

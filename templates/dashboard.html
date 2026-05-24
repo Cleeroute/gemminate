@@ -1562,7 +1562,7 @@
                                     'what-if analysis': 'border-indigo-400 text-indigo-700',
                                     'quiz': 'border-red-400 text-red-700',
                                     'flashcard': 'border-yellow-400 text-yellow-700',
-                                    'qualify': 'bg-black text-white border-black'
+                                    'qualify': 'bg-gray-100 text-black border-black'
                                 };
                                 const defaultColor = 'border-gray-400 text-gray-700';
                                 const colorClass = sectionColors[sectionName] || defaultColor;
@@ -1591,6 +1591,12 @@
                                         }
                                         localStorage.setItem(`${checkboxId}_completed`, e.target.checked);
                                         if (activeGoal) {
+                                            fetch(`/api/goals/${activeGoal.id}/completed_sections`, {
+                                                method: 'POST',
+                                                headers: {'Content-Type': 'application/json'},
+                                                body: JSON.stringify({ checkbox_id: checkboxId, completed: e.target.checked })
+                                            });
+
                                             // Check if this completion unlocks the next chapter
                                             const wasComplete = isChapterComplete(chapter);
                                             if (wasComplete) {
@@ -2341,6 +2347,18 @@
                 const chatBox = document.getElementById('chat-box');
                 chatBox.innerHTML = '<div class="flex justify-center my-4"><i data-lucide="loader-2" class="w-5 h-5 animate-spin text-gray-400"></i></div>';
                 lucide.createIcons();
+            }
+
+            try {
+                let completedRes = await fetch(`/api/goals/${goal.id}/completed_sections`);
+                if (completedRes.ok) {
+                    let cdata = await completedRes.json();
+                    cdata.completed_sections.forEach(id => {
+                        localStorage.setItem(`${id}_completed`, 'true');
+                    });
+                }
+            } catch (e) {
+                console.error("Failed to load completed sections", e);
             }
 
             try {
@@ -4518,6 +4536,11 @@
                     // Mark as completed
                     localStorage.setItem(`${checkboxId}_completed`, 'true');
                     if (activeGoal) {
+                        fetch(`/api/goals/${activeGoal.id}/completed_sections`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ checkbox_id: checkboxId, completed: true })
+                        });
                         renderChapterTree(activeGoal);
                     }
                     setTimeout(() => hideQualifyModal(), 3000);

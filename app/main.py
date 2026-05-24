@@ -796,18 +796,27 @@ async def process_single_chapter(goal_id, chapter, pdf_path, vector_store_path, 
                 try:
                     new_vs = FAISS.from_documents(chunks, embeddings_model)
                     
-                    if not os.path.exists(vector_store_path):
-                        os.makedirs(vector_store_path)
+                    # Ensure directory exists
+                    os.makedirs(vector_store_path, exist_ok=True)
                         
                     import threading
                     faiss_lock = threading.Lock()
                     with faiss_lock:
-                        if os.path.exists(os.path.join(vector_store_path, "index.faiss")):
-                            existing_vs = FAISS.load_local(vector_store_path, embeddings_model, allow_dangerous_deserialization=True)
-                            existing_vs.merge_from(new_vs)
-                            existing_vs.save_local(vector_store_path)
+                        index_file = os.path.join(vector_store_path, "index.faiss")
+                        if os.path.exists(index_file):
+                            try:
+                                existing_vs = FAISS.load_local(vector_store_path, embeddings_model, allow_dangerous_deserialization=True)
+                                existing_vs.merge_from(new_vs)
+                                existing_vs.save_local(vector_store_path)
+                            except Exception as e:
+                                print(f"Error loading/merging existing vector store: {e}. Overwriting with new one.")
+                                new_vs.save_local(vector_store_path)
                         else:
                             new_vs.save_local(vector_store_path)
+                    
+                    # Verify it was saved
+                    if not os.path.exists(os.path.join(vector_store_path, "index.faiss")):
+                        print(f"CRITICAL: Failed to save vector store to {vector_store_path}")
                 except TypeError as e:
                     if "NoneType" in str(e):
                         print(f"Embedding failed due to OpenRouter API error (TypeError: {e}). Skipping vector extraction for this chunk.")
@@ -1171,6 +1180,47 @@ def get_goal_status(
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
     return goal
+
+@app.get("/api/goals/{goal_id}/completed_sections")
+def get_completed_sections(
+    goal_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_user)
+):
+    goal = db.query(models.Goal).filter(models.Goal.id == goal_id, models.Goal.owner_id == current_user.id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    sections = db.query(models.CompletedSection).filter(models.CompletedSection.goal_id == goal_id).all()
+    return {"completed_sections": [s.checkbox_id for s in sections if s.completed]}
+
+from pydantic import BaseModel
+class CompletedSectionUpdate(BaseModel):
+    checkbox_id: str
+    completed: bool
+
+@app.post("/api/goals/{goal_id}/completed_sections")
+def update_completed_section(
+    goal_id: int,
+    data: CompletedSectionUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_user)
+):
+    goal = db.query(models.Goal).filter(models.Goal.id == goal_id, models.Goal.owner_id == current_user.id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    
+    section = db.query(models.CompletedSection).filter(
+        models.CompletedSection.goal_id == goal_id, 
+        models.CompletedSection.checkbox_id == data.checkbox_id
+    ).first()
+    
+    if section:
+        section.completed = data.completed
+    else:
+        section = models.CompletedSection(goal_id=goal_id, checkbox_id=data.checkbox_id, completed=data.completed)
+        db.add(section)
+    db.commit()
+    return {"message": "Success"}
 
 @app.get("/api/goals/{goal_id}/quizzes", response_model=list[schemas.QuizResponse])
 def get_quizzes(
@@ -1667,8 +1717,11 @@ async def chat_with_ai(
     if goal.status != "completed":
         raise HTTPException(status_code=400, detail=f"Goal is not ready yet. Current status: {goal.status} - {goal.status_message}")
 
-    if not os.path.exists(goal.vector_store_path):
-        raise HTTPException(status_code=500, detail="Vector store missing on disk")
+    if not os.path.exists(goal.vector_store_path) or not os.path.exists(os.path.join(goal.vector_store_path, "index.faiss")):
+        # If the directory exists but index.faiss is missing, it might still be processing or failed.
+        # However, since status is "completed", we should handle this gracefully.
+        # We'll try to re-create the directory if it's missing, but if the index is missing, we can't search.
+        raise HTTPException(status_code=500, detail=f"Vector store index missing on disk at {goal.vector_store_path}")
 
     try:
         # 1. Retrieve context
