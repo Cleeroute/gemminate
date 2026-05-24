@@ -14,7 +14,7 @@
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
-    <nav class="bg-gray-900 border-b cursor-border px-8 py-4 flex justify-between items-center z-10">
+    <nav class="bg-gray-900 border-b cursor-border px-8 py-4 flex flex-col sm:flex-row flex-wrap gap-4 justify-between items-center z-10">
         <div class="flex items-center gap-3">
             <div class="bg-blue-600 p-1.5 rounded-lg">
                 <i data-lucide="shield-check" class="w-6 h-6 text-white"></i>
@@ -40,7 +40,8 @@
         </div>
         
         <div class="bg-gray-900 border cursor-border rounded-2xl shadow-2xl overflow-hidden">
-            <table class="w-full text-left">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
                 <thead>
                     <tr class="bg-gray-800/50 text-gray-500 uppercase text-[10px] font-bold tracking-widest border-b cursor-border">
                         <th class="py-4 px-6">User ID</th>
@@ -58,6 +59,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 

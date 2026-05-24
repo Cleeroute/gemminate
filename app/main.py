@@ -1367,9 +1367,10 @@ async def score_qualify(
     return {"score": score}
 
 async def search_youtube_videos(query: str):
+    # YouTube Data API often fails due to key restrictions or quota.
+    # Falling back to a more reliable way to "search" using a non-API way if possible,
+    # or at least providing some default helpful videos if search fails.
     api_key = os.getenv("YOUTUBE_DATA_API_KEY")
-    if not api_key:
-        return []
     
     url = "https://www.googleapis.com/youtube/v3/search"
     params = {
@@ -1377,25 +1378,37 @@ async def search_youtube_videos(query: str):
         "q": query,
         "maxResults": 3,
         "type": "video",
-        "key": api_key
     }
+    if api_key:
+        params["key"] = api_key
     
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url, params=params)
-            if response.status_code == 200:
-                data = response.json()
-                videos = []
-                for item in data.get("items", []):
-                    videos.append({
-                        "title": item["snippet"]["title"],
-                        "video_id": item["id"]["videoId"],
-                        "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"]
-                    })
-                return videos
+            if api_key:
+                response = await client.get(url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    videos = []
+                    for item in data.get("items", []):
+                        videos.append({
+                            "title": item["snippet"]["title"],
+                            "video_id": item["id"]["videoId"],
+                            "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"]
+                        })
+                    return videos
+                else:
+                    print(f"YouTube API failed with status {response.status_code}: {response.text}")
         except Exception as e:
-            print(f"YouTube API Error: {e}")
-    return []
+            print(f"YouTube API Exception: {e}")
+    
+    # Fallback: If API fails, provide a link to YouTube search directly
+    # Since the UI expects video objects, we provide one that looks like a search prompt.
+    search_url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+    return [{
+        "title": f"Search YouTube for '{query}'",
+        "video_id": search_url, # Frontend will detect 'http' and use it as iframe src
+        "thumbnail": "https://www.youtube.com/img/desktop/yt_1200.png"
+    }]
 
 @app.post("/api/goals/{goal_id}/videos")
 async def generate_videos(

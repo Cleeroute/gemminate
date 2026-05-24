@@ -310,7 +310,7 @@
     </nav>
 
     <!-- Side Panel (Goals List & Chapter Tree) -->
-    <aside id="side-panel" class="w-80 h-full cursor-sidebar border-r cursor-border flex flex-col transition-all duration-300 overflow-hidden flex-shrink-0">
+    <aside id="side-panel" class="absolute md:relative z-40 bg-white w-80 max-w-[calc(100vw-3.5rem)] md:max-w-none h-full cursor-sidebar border-r cursor-border flex flex-col transition-all duration-300 overflow-hidden flex-shrink-0">
         <div id="goals-section" class="flex flex-col flex-1 overflow-hidden">
             <div class="p-5 border-b cursor-border flex items-center justify-between">
                 <h2 class="font-semibold text-gray-900">Your Goals</h2>
@@ -335,13 +335,16 @@
                         <button onclick="showGoalsList()" class="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wider">Back</button>
                     </div>
                 </div>
+                <button onclick="toggleSidePanel()" class="text-gray-500 hover:text-gray-900 md:hidden">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
             </div>
             <div class="flex-1 overflow-y-auto p-4 custom-scrollbar" style="max-height: calc(100vh - 120px);" id="chapter-tree-container">
                 <!-- Tree injected here -->
             </div>
         </div>
     </aside>
-    <div id="sidebar-resizer" class="w-1.5 bg-gray-100 hover:bg-blue-400 cursor-col-resize z-40 transition-colors border-r border-gray-200"></div>
+    <div id="sidebar-resizer" class="hidden md:block w-1.5 bg-gray-100 hover:bg-blue-400 cursor-col-resize z-40 transition-colors border-r border-gray-200"></div>
 
     <!-- Main View -->
     <main class="flex-1 flex flex-col relative overflow-hidden min-w-0">
@@ -360,7 +363,7 @@
         </header>
 
         <!-- Content Area (Split View) -->
-        <div class="flex-1 flex overflow-hidden" id="workspace">
+        <div class="flex-1 flex flex-col md:flex-row overflow-hidden" id="workspace">
             <!-- Empty State -->
             <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-center p-10">
                 <div class="w-24 h-24 logo-bg rounded-3xl flex items-center justify-center mb-6 border cursor-border p-4 shadow-sm">
@@ -415,9 +418,9 @@
             <!-- Structure Preview Container (Hidden initially) -->
             <div id="structure-preview-container" class="hidden flex-1 flex flex-col items-center justify-center p-10 bg-white overflow-hidden">
                 <div class="w-full max-w-4xl bg-white border cursor-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-                    <div class="p-6 border-b cursor-border flex items-center justify-between bg-blue-50/50">
+                    <div class="p-6 border-b cursor-border flex flex-col sm:flex-row items-start sm:items-center justify-between bg-blue-50/50 gap-4">
                         <div class="flex items-center gap-4">
-                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600 flex-shrink-0">
                                 <i data-lucide="list-tree" class="w-6 h-6"></i>
                             </div>
                             <div>
@@ -425,15 +428,15 @@
                                 <p class="text-sm text-gray-500">Verify the extracted subchapters and topics before finalizing your learning plan.</p>
                             </div>
                         </div>
-                        <button onclick="showChapterSelection(activeGoal)" class="text-xs font-bold text-blue-600 hover:underline">Change Chapters</button>
+                        <button onclick="showChapterSelection(activeGoal)" class="text-xs font-bold text-blue-600 hover:underline whitespace-nowrap self-end sm:self-auto">Change Chapters</button>
                     </div>
                     <div class="p-0 overflow-y-auto flex-1 bg-white custom-scrollbar" id="structure-list-container">
                         <!-- Structure hierarchy injected here -->
                     </div>
-                    <div class="p-6 border-t cursor-border bg-gray-50 flex justify-between items-center">
+                    <div class="p-6 border-t cursor-border bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                         <p class="text-xs text-gray-500 italic">Tip: You can edit titles or remove topics if they seem incorrect.</p>
-                        <div class="flex gap-3">
-                            <button onclick="saveAndConfirmStructure()" id="confirm-structure-btn" class="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-green-600/20 flex items-center gap-2">
+                        <div class="flex gap-3 w-full sm:w-auto">
+                            <button onclick="saveAndConfirmStructure()" id="confirm-structure-btn" class="w-full sm:w-auto px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-green-600/20 flex items-center justify-center gap-2">
                                 <i data-lucide="check-circle" class="w-5 h-5"></i>
                                 Finalize & Start Learning
                             </button>
@@ -443,7 +446,7 @@
             </div>
 
             <!-- PDF Side (Hidden by default) -->
-            <div id="pdf-container" class="hidden w-1/2 border-r cursor-border flex flex-col bg-white overflow-hidden transition-all duration-300 ease-in-out relative">
+            <div id="pdf-container" class="hidden flex-1 min-h-0 min-w-0 w-full md:w-1/2 border-b md:border-b-0 md:border-r cursor-border flex flex-col bg-white overflow-hidden transition-all duration-300 ease-in-out relative">
                 <button id="pdf-crop-btn" onclick="togglePdfCropMode()" class="absolute top-4 right-4 z-50 bg-white shadow-md p-2 rounded-lg text-gray-600 hover:text-blue-600 border cursor-border" title="Draw rectangle to crop visual">
                     <i data-lucide="crop" class="w-5 h-5"></i>
                 </button>
@@ -451,7 +454,10 @@
             </div>
 
             <!-- Resizer -->
-            <div id="resizer" class="hidden w-1.5 bg-gray-100 hover:bg-blue-400 cursor-col-resize z-30 transition-colors border-l border-r border-gray-200"></div>
+            <div id="resizer" class="hidden w-full h-1.5 md:w-1.5 md:h-auto bg-gray-200 hover:bg-blue-400 cursor-row-resize md:cursor-col-resize z-30 transition-colors border-t border-b md:border-t-0 md:border-b-0 md:border-l md:border-r border-gray-300 flex-shrink-0 relative">
+                <!-- Mobile drag handle icon -->
+                <div class="md:hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-1 bg-gray-400 rounded-full"></div>
+            </div>
 
             <!-- Processing Side (Hidden by default) -->
             <div id="processing-container" class="hidden flex-1 flex flex-col items-center justify-center p-10 bg-white">
@@ -480,7 +486,7 @@
             </div>
 
             <!-- Chat Side (Hidden by default) -->
-            <div id="chat-container" class="hidden w-1/2 flex relative bg-white group/chat transition-all duration-300 ease-in-out">
+            <div id="chat-container" class="hidden flex-1 min-h-0 min-w-0 w-full md:w-1/2 flex relative bg-white group/chat transition-all duration-300 ease-in-out overflow-hidden">
                 <!-- Navigation Dots Rail -->
                 <div id="nav-dots-container" class="w-6 flex flex-col items-center py-10 gap-2 border-r border-gray-100 bg-gray-50/30 overflow-y-auto hide-scrollbar transition-all">
                     <!-- Dots injected here -->
@@ -488,20 +494,20 @@
 
                 <div class="flex-1 flex flex-col relative overflow-hidden">
                 <!-- Top sticky tabs -->
-                <div class="flex border-b cursor-border p-2 gap-2 justify-center bg-gray-50/80 backdrop-blur z-20">
-                    <button onclick="openQuizzesTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all">
+                <div class="flex border-b cursor-border p-2 gap-2 justify-start sm:justify-center bg-gray-50/80 backdrop-blur z-20 overflow-x-auto hide-scrollbar">
+                    <button onclick="openQuizzesTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all whitespace-nowrap">
                         <i data-lucide="help-circle" class="w-4 h-4 text-blue-500"></i> Quizzes
                     </button>
-                    <button onclick="openFlashcardsTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all">
+                    <button onclick="openFlashcardsTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all whitespace-nowrap">
                         <i data-lucide="layers" class="w-4 h-4 text-purple-500"></i> Flashcards
                     </button>
-                    <button onclick="openVideosTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all">
+                    <button onclick="openVideosTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all whitespace-nowrap">
                         <i data-lucide="video" class="w-4 h-4 text-orange-500"></i> Videos
                     </button>
-                    <button onclick="openVisualsTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all">
+                    <button onclick="openVisualsTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all whitespace-nowrap">
                         <i data-lucide="image" class="w-4 h-4 text-pink-500"></i> Visuals
                     </button>
-                    <button onclick="openSummariesTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all">
+                    <button onclick="openSummariesTab()" class="px-4 py-1.5 text-sm font-semibold rounded-lg bg-white border cursor-border shadow-sm hover:bg-gray-50 text-gray-700 flex items-center gap-2 transition-all whitespace-nowrap">
                         <i data-lucide="file-text" class="w-4 h-4 text-indigo-500"></i> Summaries
                     </button>
                 </div>
@@ -520,17 +526,17 @@
                     <div id="canvas-content" class="flex-1 overflow-y-auto hide-scrollbar p-6"></div>
                 </div>
                 <div class="p-6 border-t cursor-border flex flex-col gap-2">
-                    <div class="flex gap-2 text-xs">
-                        <button type="button" onclick="insertPrompt('@quiz')" class="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100 flex items-center gap-1">
+                    <div class="flex gap-2 text-xs overflow-x-auto hide-scrollbar pb-1">
+                        <button type="button" onclick="insertPrompt('@quiz')" class="whitespace-nowrap px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100 flex items-center gap-1">
                             <i data-lucide="help-circle" class="w-3.5 h-3.5"></i> Quiz
                         </button>
-                        <button type="button" onclick="insertPrompt('@flashcard')" class="px-3 py-1.5 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors border border-purple-100 flex items-center gap-1">
+                        <button type="button" onclick="insertPrompt('@flashcard')" class="whitespace-nowrap px-3 py-1.5 bg-purple-50 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors border border-purple-100 flex items-center gap-1">
                             <i data-lucide="layers" class="w-3.5 h-3.5"></i> Flashcards
                         </button>
-                        <button type="button" onclick="insertPrompt('@summary')" class="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors border border-green-100 flex items-center gap-1">
+                        <button type="button" onclick="insertPrompt('@summary')" class="whitespace-nowrap px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors border border-green-100 flex items-center gap-1">
                             <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Summary
                         </button>
-                        <button type="button" onclick="insertPrompt('@video')" class="px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors border border-orange-100 flex items-center gap-1">
+                        <button type="button" onclick="insertPrompt('@video')" class="whitespace-nowrap px-3 py-1.5 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors border border-orange-100 flex items-center gap-1">
                             <i data-lucide="video" class="w-3.5 h-3.5"></i> Video
                         </button>
                     </div>
@@ -4154,7 +4160,11 @@
         function playVideo(videoId) {
             const modal = document.getElementById('video-modal');
             const iframe = document.getElementById('video-player-iframe');
-            iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            if (videoId.startsWith('http')) {
+                iframe.src = videoId;
+            } else {
+                iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            }
             modal.classList.remove('hidden');
             lucide.createIcons();
         }
@@ -4533,24 +4543,31 @@
         let isResizing = false;
         let isSidebarResizing = false;
 
-        if (sidebarResizer) {
-            sidebarResizer.addEventListener('mousedown', (e) => {
-                isSidebarResizing = true;
-                document.body.style.cursor = 'col-resize';
-                document.body.style.userSelect = 'none';
-                const overlay = document.createElement('div');
-                overlay.id = 'resize-overlay';
-                overlay.style.position = 'fixed';
-                overlay.style.inset = '0';
-                overlay.style.zIndex = '9999';
-                overlay.style.cursor = 'col-resize';
-                document.body.appendChild(overlay);
-            });
+        function handleSidebarResizerStart(e) {
+            isSidebarResizing = true;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            const overlay = document.createElement('div');
+            overlay.id = 'resize-overlay';
+            overlay.style.position = 'fixed';
+            overlay.style.inset = '0';
+            overlay.style.zIndex = '9999';
+            overlay.style.cursor = 'col-resize';
+            document.body.appendChild(overlay);
         }
 
-        resizer.addEventListener('mousedown', (e) => {
+        if (sidebarResizer) {
+            sidebarResizer.addEventListener('mousedown', handleSidebarResizerStart);
+            sidebarResizer.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                handleSidebarResizerStart(e.touches[0]);
+            }, { passive: false });
+        }
+
+        function handleResizerStart(e) {
             isResizing = true;
-            document.body.style.cursor = 'col-resize';
+            const cursor = window.innerWidth < 768 ? 'row-resize' : 'col-resize';
+            document.body.style.cursor = cursor;
             // Prevent text selection while resizing
             document.body.style.userSelect = 'none';
             // Add a temporary overlay to catch mouse events if we're over an iframe
@@ -4559,66 +4576,84 @@
             overlay.style.position = 'fixed';
             overlay.style.inset = '0';
             overlay.style.zIndex = '9999';
-            overlay.style.cursor = 'col-resize';
+            overlay.style.cursor = cursor;
             document.body.appendChild(overlay);
-        });
+            
+            // Remove transition during resize for smooth dragging
+            pdfContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
+            chatContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
+        }
 
-        document.addEventListener('mousemove', (e) => {
+        resizer.addEventListener('mousedown', handleResizerStart);
+        resizer.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleResizerStart(e.touches[0]);
+        }, { passive: false });
+
+        function handleMove(clientX, clientY) {
             if (isSidebarResizing) {
-                // Determine new width based on mouse X position
-                // The left nav bar is 56px (w-14)
-                let newWidth = e.clientX - 56;
+                let newWidth = clientX - 56;
                 if (newWidth < 150) newWidth = 150; // min width
                 if (newWidth > 500) newWidth = 500; // max width
                 sidePanel.style.width = `${newWidth}px`;
-                // Disable transition during drag for smoothness
                 sidePanel.style.transition = 'none';
             }
 
             if (isResizing) {
                 const workspace = document.getElementById('workspace');
                 const workspaceRect = workspace.getBoundingClientRect();
-                const relativeX = e.clientX - workspaceRect.left;
                 
-                // Calculate percentage
-                const percentage = (relativeX / workspaceRect.width) * 100;
-                
-                // Bounds checking (min 20%, max 80%)
-                if (percentage > 10 && percentage < 90) {
-                    pdfContainer.style.width = `${percentage}%`;
-                    chatContainer.style.width = `${100 - percentage}%`;
+                if (window.innerWidth < 768) {
+                    const relativeY = clientY - workspaceRect.top;
+                    const percentage = (relativeY / workspaceRect.height) * 100;
+                    
+                    if (percentage > 10 && percentage < 90) {
+                        pdfContainer.style.height = `${percentage}%`;
+                        chatContainer.style.height = `${100 - percentage}%`;
+                        pdfContainer.style.width = '100%';
+                        chatContainer.style.width = '100%';
+                    }
+                } else {
+                    const relativeX = clientX - workspaceRect.left;
+                    const percentage = (relativeX / workspaceRect.width) * 100;
+                    
+                    if (percentage > 10 && percentage < 90) {
+                        pdfContainer.style.width = `${percentage}%`;
+                        chatContainer.style.width = `${100 - percentage}%`;
+                        pdfContainer.style.height = '100%';
+                        chatContainer.style.height = '100%';
+                    }
                 }
             }
-        });
+        }
 
-        document.addEventListener('mouseup', () => {
+        document.addEventListener('mousemove', (e) => handleMove(e.clientX, e.clientY));
+        document.addEventListener('touchmove', (e) => {
+            if (isResizing || isSidebarResizing) {
+                handleMove(e.touches[0].clientX, e.touches[0].clientY);
+            }
+        }, { passive: false });
+
+        function handleEnd() {
             if (isSidebarResizing) {
                 isSidebarResizing = false;
                 sidePanel.style.transition = ''; // restore transition
             }
             if (isResizing) {
                 isResizing = false;
+                if (!pdfContainer.classList.contains('transition-all')) {
+                    pdfContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
+                    chatContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
+                }
             }
             document.body.style.cursor = 'default';
             document.body.style.userSelect = 'auto';
             const overlay = document.getElementById('resize-overlay');
             if (overlay) overlay.remove();
-        });
+        }
 
-
-        // Update custom widths when resizer is used
-        resizer.addEventListener('mousedown', () => {
-            // Remove transition during resize for smooth dragging
-            pdfContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
-            chatContainer.classList.remove('transition-all', 'duration-300', 'ease-in-out');
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (!pdfContainer.classList.contains('transition-all')) {
-                pdfContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
-                chatContainer.classList.add('transition-all', 'duration-300', 'ease-in-out');
-            }
-        });
+        document.addEventListener('mouseup', handleEnd);
+        document.addEventListener('touchend', handleEnd);
 
         async function init() {
             await loadGoals();
